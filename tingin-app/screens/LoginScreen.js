@@ -10,25 +10,64 @@ import {
   Platform,
   ScrollView,
   Dimensions,
-  Animated
+  Animated,
+  Image
 } from 'react-native';
-import Svg, { Path, Circle } from 'react-native-svg';
+import Svg, { Path, Circle, Ellipse } from 'react-native-svg';
 import { Accelerometer } from 'expo-sensors';
+import { Asset } from 'expo-asset';
+
+const HEAD_IMG = require('../assets/meerkat-head.png');
 
 const { width } = Dimensions.get('window');
 
-// ---- Meerkat geometry (keep these in sync with the styles below) ----
-const HEAD_W = 144;
-const HEAD_H = 124;
-const OVERLAP = 22;                 // how much of the head hides behind the card
-const CARD_TOP = HEAD_H - OVERLAP;  // where the card's top edge sits
-const PAW_H = 38;
-const PAW_REST_TOP = CARD_TOP - PAW_H / 2;  // paws straddle the card's top edge
-const EYE_CENTER_Y = 47;
-const COVER_Y = CARD_TOP - EYE_CENTER_Y;    // how far paws travel up to cover eyes
-const COVER_X = 22;                         // how far paws slide inward to cover eyes
-const EYE_RANGE = 6;                        // max pupil travel inside the eyeball
-const GAZE_CHARS = 26;                      // characters it takes to sweep left -> right
+// ---- Meerkat geometry ----
+// The head is cut out of the SAME artwork as the landing page (assets/meerkat-head.png,
+// 610 x 450). Pupils are animated on top of it, so the face is identical.
+const HEAD_W = 200;
+const K = HEAD_W / 610;                      // image px -> screen px
+const HEAD_H = 450 * K;
+const CARD_TOP = Math.round(420 * K);        // card's top edge (the neck hides behind it)
+const PAW_W = 44;
+const PAW_H = 34;
+const PAW_REST_TOP = CARD_TOP - PAW_H * 0.65; // paws sit mostly ON the card's edge, not inside it
+const EYE_D = 98 * K + 1;                    // outer eye diameter (covers the painted eye)
+const EYE_L = { x: 187 * K, y: 234 * K };    // eye centres, measured from the artwork
+const EYE_R = { x: 423.5 * K, y: 229.5 * K };
+const PUPIL_D = 55 * K;
+const REST_X = 48;                           // paw distance from centre when resting
+const EYE_OFFSET_X = HEAD_W / 2 - EYE_L.x;   // eye distance from centre
+const COVER_Y = PAW_REST_TOP + PAW_H / 2 - (EYE_L.y + EYE_R.y) / 2; // paws travel up to the eyes
+const COVER_X = REST_X - EYE_OFFSET_X;       // paws slide inward over the eyes
+const EYE_RANGE = 4.5;                       // max pupil travel
+const GAZE_CHARS = 26;                       // characters it takes to sweep left -> right
+
+// Paw drawn in the same tan / brown-fur palette as the artwork
+function PawArt({ flip }) {
+  return (
+    <Svg
+      width={PAW_W}
+      height={PAW_H}
+      viewBox="0 0 52 40"
+      style={flip ? { transform: [{ scaleX: -1 }] } : undefined}
+    >
+      <Path
+        d="M5 36 C2 24 6 8 20 5 C32 3 46 9 47 24 C48 33 44 37 40 37 Z"
+        fill="#AD8E6F"
+        stroke="#3A2312"
+        strokeWidth="2.2"
+        strokeLinejoin="round"
+      />
+      <Path d="M12 10 C16 6 24 5 30 6" stroke="#DCBD91" strokeWidth="3" strokeLinecap="round" fill="none" />
+      <Path
+        d="M17 27 L17 34 M25 25 L25 34 M33 27 L33 34"
+        stroke="#6B4A2E"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
 
 // Simple line-drawing eye. `open` = password is visible.
 function EyeIcon({ open, color = '#64748B', size = 24 }) {
@@ -96,6 +135,12 @@ export default function LoginScreen({
   const [focusedField, setFocusedField] = useState(null); // 'NAME' | 'ID' | 'EMAIL' | 'PASSWORD' | null
   const [showPassword, setShowPassword] = useState(false);
   const [gaze, setGaze] = useState(0); // 0 (start of text) -> 1 (far end of text)
+  const [headReady, setHeadReady] = useState(false); // eyes/paws only show once the face has loaded
+
+  // Preload the face so it's already decoded when the form opens
+  useEffect(() => {
+    Asset.fromModule(HEAD_IMG).downloadAsync().catch(() => {});
+  }, []);
 
   // 1. Accelerometer animations for Step 1 Landing Screen
   const tiltX = useRef(new Animated.Value(0)).current;
@@ -148,7 +193,7 @@ export default function LoginScreen({
     let y = 0;
     if (focusedField && !pawsCovering) {
       x = (gaze * 2 - 1) * EYE_RANGE;
-      y = 5;
+      y = 3.5;
     }
     Animated.parallel([
       Animated.spring(eyeX, { toValue: x, friction: 7, tension: 90, useNativeDriver: true }),
@@ -200,7 +245,7 @@ export default function LoginScreen({
   });
   const leanShift = eyeX.interpolate({ inputRange: [-EYE_RANGE, EYE_RANGE], outputRange: [-4, 4], extrapolate: 'clamp' });
   const leanRotate = eyeX.interpolate({ inputRange: [-EYE_RANGE, EYE_RANGE], outputRange: ['-3deg', '3deg'], extrapolate: 'clamp' });
-  const lidY = blink.interpolate({ inputRange: [0, 1], outputRange: [-36, 0] });
+  const lidY = blink.interpolate({ inputRange: [0, 1], outputRange: [-EYE_D, 0] });
   const pawY = cover.interpolate({ inputRange: [0, 1], outputRange: [0, -COVER_Y] });
   const leftPawX = cover.interpolate({ inputRange: [0, 1], outputRange: [0, COVER_X] });
   const rightPawX = cover.interpolate({ inputRange: [0, 1], outputRange: [0, -COVER_X] });
@@ -232,20 +277,17 @@ export default function LoginScreen({
 
   const renderPaw = (side) => (
     <Animated.View
-      style={[
-        styles.paw,
-        {
-          transform: [
-            { translateY: pawY },
-            { translateX: side === 'left' ? leftPawX : rightPawX },
-            { rotate: side === 'left' ? leftPawRot : rightPawRot },
-          ],
-        },
-      ]}
+      style={{
+        width: PAW_W,
+        height: PAW_H,
+        transform: [
+          { translateY: pawY },
+          { translateX: side === 'left' ? leftPawX : rightPawX },
+          { rotate: side === 'left' ? leftPawRot : rightPawRot },
+        ],
+      }}
     >
-      <View style={styles.pawToe} />
-      <View style={styles.pawToe} />
-      <View style={styles.pawToe} />
+      <PawArt flip={side === 'right'} />
     </Animated.View>
   );
 
@@ -328,25 +370,25 @@ export default function LoginScreen({
                 pointerEvents="none"
               >
                 <View style={styles.headBox}>
-                  <View style={[styles.ear, styles.earLeft]} />
-                  <View style={[styles.ear, styles.earRight]} />
-
-                  <View style={styles.meerkatHead}>
-                    <View style={styles.furLineCenter} />
-
-                    <View style={[styles.eyePatch, styles.eyePatchLeft]} />
-                    <View style={[styles.eyePatch, styles.eyePatchRight]} />
-
-                    <View style={styles.glassesBridge} />
-                    <View style={[styles.glassesRim, styles.glassesLeft]}>{renderEye()}</View>
-                    <View style={[styles.glassesRim, styles.glassesRight]}>{renderEye()}</View>
-
-                    <View style={styles.muzzle}>
-                      <View style={styles.muzzlePad} />
-                      <View style={styles.nose} />
-                      <View style={styles.smile} />
-                    </View>
-                  </View>
+                  <Image
+                    source={HEAD_IMG}
+                    style={{ width: HEAD_W, height: HEAD_H }}
+                    fadeDuration={0}
+                    onLoad={() => setHeadReady(true)}
+                    onError={(e) =>
+                      console.warn('meerkat-head.png failed to load. Is it in /assets? ', e.nativeEvent)
+                    }
+                  />
+                  {headReady && (
+                    <>
+                      <View style={[styles.eyeSocket, { left: EYE_L.x - EYE_D / 2, top: EYE_L.y - EYE_D / 2 }]}>
+                        {renderEye()}
+                      </View>
+                      <View style={[styles.eyeSocket, { left: EYE_R.x - EYE_D / 2, top: EYE_R.y - EYE_D / 2 }]}>
+                        {renderEye()}
+                      </View>
+                    </>
+                  )}
                 </View>
               </Animated.View>
 
@@ -419,12 +461,14 @@ export default function LoginScreen({
               </View>
 
               {/* LAYER 3: paws, in front of the card edge */}
-              <View style={styles.pawsLayer} pointerEvents="none">
-                <View style={styles.pawsRow}>
-                  {renderPaw('left')}
-                  {renderPaw('right')}
+              {headReady && (
+                <View style={styles.pawsLayer} pointerEvents="none">
+                  <View style={styles.pawsRow}>
+                    {renderPaw('left')}
+                    {renderPaw('right')}
+                  </View>
                 </View>
-              </View>
+              )}
             </View>
 
             <TouchableOpacity
@@ -563,110 +607,35 @@ const styles = StyleSheet.create({
     width: HEAD_W,
     height: HEAD_H
   },
-  ear: {
+  eyeSocket: {
     position: 'absolute',
-    top: 28,
-    width: 28,
-    height: 36,
-    backgroundColor: '#8B684C',
-    borderRadius: 14,
-    borderWidth: 3,
-    borderColor: '#3A2312'
-  },
-  earLeft: {
-    left: -12,
-    transform: [{ rotate: '-15deg' }]
-  },
-  earRight: {
-    right: -12,
-    transform: [{ rotate: '15deg' }]
-  },
-  meerkatHead: {
-    width: HEAD_W,
-    height: HEAD_H,
-    backgroundColor: '#DFC39D',
-    borderTopLeftRadius: 72,
-    borderTopRightRadius: 72,
-    borderBottomLeftRadius: 40,
-    borderBottomRightRadius: 40,
-    borderWidth: 3,
-    borderColor: '#3A2312',
-    alignItems: 'center',
-    position: 'relative'
-  },
-  furLineCenter: {
-    width: 2,
-    height: 12,
-    backgroundColor: '#3A2312',
-    marginTop: 8,
-    borderRadius: 2
-  },
-  eyePatch: {
-    position: 'absolute',
-    top: 20,
-    width: 52,
-    height: 54,
-    backgroundColor: '#8B684C',
-    borderRadius: 26
-  },
-  eyePatchLeft: {
-    left: 12
-  },
-  eyePatchRight: {
-    right: 12
-  },
-  glassesBridge: {
-    position: 'absolute',
-    top: 42,
-    width: 22,
-    height: 5,
-    backgroundColor: '#6E3B1E',
-    zIndex: 6
-  },
-  glassesRim: {
-    position: 'absolute',
-    top: 22,
-    width: 54,
-    height: 50,
-    borderRadius: 26,
-    borderWidth: 4.5,
-    borderColor: '#6E3B1E',
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 5
-  },
-  glassesLeft: {
-    left: 10
-  },
-  glassesRight: {
-    right: 10
+    width: EYE_D,
+    height: EYE_D
   },
   eyeball: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#FFFFFF',
+    width: EYE_D,
+    height: EYE_D,
+    borderRadius: EYE_D / 2,
+    backgroundColor: '#FFFFFB',
     borderWidth: 2,
-    borderColor: '#2A180D',
+    borderColor: '#2B190F',
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
-    position: 'relative'
+    overflow: 'hidden'
   },
   pupil: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#3B2213',
-    alignItems: 'flex-start',
-    justifyContent: 'flex-start',
-    padding: 3
+    width: PUPIL_D,
+    height: PUPIL_D,
+    borderRadius: PUPIL_D / 2,
+    backgroundColor: '#412517'
   },
   eyeGlint: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
+    position: 'absolute',
+    width: 13.5 * K,
+    height: 13.5 * K,
+    borderRadius: 7 * K,
+    left: PUPIL_D / 2 + 9.5 * K - 6.75 * K,
+    top: PUPIL_D / 2 - 10.5 * K - 6.75 * K,
     backgroundColor: '#FFFFFF'
   },
   eyelid: {
@@ -675,46 +644,16 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#8B684C',
+    backgroundColor: '#7A6551',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10
   },
   closedEyeLine: {
-    width: 22,
-    height: 3,
-    backgroundColor: '#3A2312',
-    borderRadius: 2
-  },
-  muzzle: {
-    position: 'absolute',
-    bottom: 30,
-    width: 46,
-    height: 32,
-    alignItems: 'center'
-  },
-  muzzlePad: {
-    position: 'absolute',
-    top: -4,
-    width: 46,
-    height: 32,
-    borderRadius: 23,
-    backgroundColor: '#EBD7B5'
-  },
-  nose: {
-    width: 16,
-    height: 11,
-    backgroundColor: '#3A2312',
-    borderRadius: 8,
-    marginTop: 2,
-    marginBottom: 3
-  },
-  smile: {
     width: 18,
-    height: 7,
-    borderBottomWidth: 2.5,
-    borderColor: '#3A2312',
-    borderRadius: 8
+    height: 2,
+    backgroundColor: '#2B190F',
+    borderRadius: 2
   },
 
   pawsLayer: {
@@ -727,28 +666,9 @@ const styles = StyleSheet.create({
     elevation: 8
   },
   pawsRow: {
-    width: 188,
+    width: REST_X * 2 + PAW_W,
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12
-  },
-  paw: {
-    width: 50,
-    height: PAW_H,
-    backgroundColor: '#C59F76',
-    borderRadius: 20,
-    borderWidth: 3,
-    borderColor: '#3A2312',
-    flexDirection: 'row',
-    justifyContent: 'space-evenly',
-    alignItems: 'flex-start',
-    paddingTop: 5
-  },
-  pawToe: {
-    width: 2.5,
-    height: 11,
-    backgroundColor: '#3A2312',
-    borderRadius: 2
+    justifyContent: 'space-between'
   },
 
   // White Box Card Holding Email & Password
