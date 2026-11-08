@@ -2,10 +2,12 @@ import React, { useState } from 'react';
 import { Alert } from 'react-native';
 import LoginScreen from './screens/LoginScreen';
 import DashboardScreen from './screens/DashboardScreen';
+import RosterScreen from './screens/RosterScreen';
 import HealthScreen from './screens/HealthScreen';
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState('AUTH'); // AUTH | DASHBOARD | HEALTH
+  const [currentScreen, setCurrentScreen] = useState('AUTH'); // AUTH | DASHBOARD | ROSTER | HEALTH
+  const [selectedCourse, setSelectedCourse] = useState(null);
   const [isSignUp, setIsSignUp] = useState(false);
   const [fullName, setFullName] = useState('');
   const [facultyId, setFacultyId] = useState('');
@@ -21,6 +23,11 @@ export default function App() {
       return;
     }
     setCurrentScreen('DASHBOARD');
+  };
+
+  const handleOpenRoster = (course) => {
+    setSelectedCourse(course);
+    setCurrentScreen('ROSTER');
   };
 
   return (
@@ -41,11 +48,22 @@ export default function App() {
         />
       )}
       {currentScreen === 'DASHBOARD' && (
-        <DashboardScreen email={email} setCurrentScreen={setCurrentScreen} />
+        <DashboardScreen
+          email={email}
+          fullName={fullName}
+          setCurrentScreen={setCurrentScreen}
+          onOpenRoster={handleOpenRoster}
+        />
+      )}
+      {currentScreen === 'ROSTER' && (
+        <RosterScreen
+          course={selectedCourse}
+          setCurrentScreen={setCurrentScreen}
+        />
       )}
       {currentScreen === 'HEALTH' && (
         <HealthScreen setCurrentScreen={setCurrentScreen} />
       )}
     </>
   );
-}
+}0
