@@ -17,6 +17,7 @@ import {
   Image
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { BlurView } from 'expo-blur';
 
 const INITIAL_STUDENTS = {
   CS301: [
@@ -88,6 +89,80 @@ const INITIAL_STUDENTS = {
   ]
 };
 
+// ---- Liquid Glass tuning ----
+// Works like the iOS 27 transparency slider: higher TINT = more frosted and readable,
+// lower TINT = clearer glass. BLUR is the strength of the backdrop blur.
+const GLASS_BLUR = 45;
+const GLASS_TINT = 0.5;
+
+// A frosted, edge-lit glass surface. Pass layout/padding through `style`.
+function Glass({
+  children,
+  style,
+  radius = 20,
+  tint = GLASS_TINT,
+  tintColor,
+  intensity = GLASS_BLUR,
+  topOnly = false
+}) {
+  const corners = {
+    borderTopLeftRadius: radius,
+    borderTopRightRadius: radius,
+    borderBottomLeftRadius: topOnly ? 0 : radius,
+    borderBottomRightRadius: topOnly ? 0 : radius
+  };
+  return (
+    <View style={[styles.glass, corners, style]}>
+      <BlurView
+        pointerEvents="none"
+        intensity={intensity}
+        tint="light"
+        style={StyleSheet.absoluteFill}
+      />
+      <View
+        pointerEvents="none"
+        style={[
+          StyleSheet.absoluteFill,
+          { backgroundColor: tintColor || `rgba(255, 255, 255, ${tint})` }
+        ]}
+      />
+      {children}
+    </View>
+  );
+}
+
+// Soft feathered color blob (stacked translucent circles) so the glass has something to refract
+function Blob({ color, size, style }) {
+  return (
+    <View style={[styles.blobWrap, { width: size, height: size }, style]}>
+      {[1, 0.85, 0.7, 0.55, 0.4, 0.25].map((f) => (
+        <View
+          key={f}
+          style={{
+            position: 'absolute',
+            width: size * f,
+            height: size * f,
+            borderRadius: size,
+            backgroundColor: color,
+            opacity: 0.17
+          }}
+        />
+      ))}
+    </View>
+  );
+}
+
+function AmbientBackdrop() {
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <Blob color="#A8DB3F" size={340} style={{ top: -110, right: -100 }} />
+      <Blob color="#7DB6FF" size={360} style={{ top: 250, left: -150 }} />
+      <Blob color="#FFA877" size={320} style={{ bottom: 60, right: -130 }} />
+      <Blob color="#C3A2FF" size={280} style={{ bottom: -90, left: -20 }} />
+    </View>
+  );
+}
+
 // Swipeable Student Row Component
 function SwipeableStudentRow({ item, badge, onSelectStatus }) {
   const translateX = useRef(new Animated.Value(0)).current;
@@ -140,10 +215,19 @@ function SwipeableStudentRow({ item, badge, onSelectStatus }) {
     onSelectStatus(item.id, newStatus);
   };
 
+  // Action buttons fade in as the card slides away, so they never show through the glass
+  const actionsOpacity = translateX.interpolate({
+    inputRange: [-ACTION_WIDTH, -24, 0],
+    outputRange: [1, 0.2, 0],
+    extrapolate: 'clamp'
+  });
+
   return (
     <View style={styles.swipeWrapper}>
       {/* Hidden Right-Side Action Buttons revealed on Slide Left */}
-      <View style={styles.hiddenActionsContainer}>
+      <Animated.View
+        style={[styles.hiddenActionsContainer, { opacity: actionsOpacity }]}
+      >
         <TouchableOpacity
           style={[styles.swipeBtn, { backgroundColor: '#65A30D' }]}
           onPress={() => chooseStatus('PRESENT')}
@@ -164,40 +248,42 @@ function SwipeableStudentRow({ item, badge, onSelectStatus }) {
         >
           <Text style={styles.swipeBtnText}>Absent</Text>
         </TouchableOpacity>
-      </View>
+      </Animated.View>
 
-      {/* Foreground Sliding Student Card */}
+      {/* Foreground Sliding Glass Student Card */}
       <Animated.View
         {...panResponder.panHandlers}
-        style={[styles.studentCard, { transform: [{ translateX }] }]}
+        style={{ transform: [{ translateX }] }}
       >
-        <View style={styles.studentTopRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.studentName}>{item.name}</Text>
-            <Text style={styles.studentMeta}>
-              ID: {item.id} • Seat {item.seat} • Match: {item.confidence}
-            </Text>
+        <Glass radius={22} style={styles.studentCard}>
+          <View style={styles.studentTopRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.studentName}>{item.name}</Text>
+              <Text style={styles.studentMeta}>
+                ID: {item.id} • Seat {item.seat} • Match: {item.confidence}
+              </Text>
+            </View>
+
+            <View
+              style={[
+                styles.statusBadge,
+                { backgroundColor: badge.bg, borderColor: badge.border }
+              ]}
+            >
+              <Text style={[styles.statusBadgeText, { color: badge.text }]}>
+                {badge.label}
+              </Text>
+            </View>
           </View>
 
-          <View
-            style={[
-              styles.statusBadge,
-              { backgroundColor: badge.bg, borderColor: badge.border }
-            ]}
-          >
-            <Text style={[styles.statusBadgeText, { color: badge.text }]}>
-              {badge.label}
-            </Text>
-          </View>
-        </View>
-
-        {item.anomaly_note && (
-          <View style={styles.anomalyBanner}>
-            <Text style={styles.anomalyBannerText}>
-              ⚠️ {item.anomaly_note} (Slide left to resolve)
-            </Text>
-          </View>
-        )}
+          {item.anomaly_note && (
+            <View style={styles.anomalyBanner}>
+              <Text style={styles.anomalyBannerText}>
+                ⚠️ {item.anomaly_note} (Slide left to resolve)
+              </Text>
+            </View>
+          )}
+        </Glass>
       </Animated.View>
     </View>
   );
@@ -335,33 +421,43 @@ export default function RosterScreen({ course, setCurrentScreen }) {
   const getBadgeStyle = (status) => {
     switch (status) {
       case 'PRESENT':
-        return { bg: '#F0FDF4', border: '#BBF7D0', text: '#65A30D', label: 'Present' };
+        return { bg: 'rgba(101, 163, 13, 0.16)', border: 'rgba(101, 163, 13, 0.38)', text: '#4D7C0F', label: 'Present' };
       case 'LATE':
-        return { bg: '#FEFCE8', border: '#FEF08A', text: '#CA8A04', label: 'Late' };
+        return { bg: 'rgba(202, 138, 4, 0.16)', border: 'rgba(202, 138, 4, 0.38)', text: '#A16207', label: 'Late' };
       case 'ANOMALY':
-        return { bg: '#FEF2F2', border: '#FECACA', text: '#DC2626', label: 'Anomaly' };
+        return { bg: 'rgba(220, 38, 38, 0.14)', border: 'rgba(220, 38, 38, 0.38)', text: '#B91C1C', label: 'Anomaly' };
       default:
-        return { bg: '#F8FAFC', border: '#E2E8F0', text: '#64748B', label: 'Absent' };
+        return { bg: 'rgba(100, 116, 139, 0.14)', border: 'rgba(100, 116, 139, 0.32)', text: '#475569', label: 'Absent' };
     }
   };
 
   return (
     <SafeAreaView style={styles.container}>
+      <AmbientBackdrop />
       <View style={styles.innerContainer}>
         {/* Top Navigation */}
         <View style={styles.topRow}>
           <TouchableOpacity
-            style={styles.backBtn}
+            activeOpacity={0.75}
             onPress={() => setCurrentScreen('DASHBOARD')}
           >
-            <Text style={styles.backBtnText}>← Dashboard</Text>
+            <Glass radius={999} style={styles.backGlass}>
+              <Text style={styles.backChevron}>‹</Text>
+              <Text style={styles.backBtnText}>Dashboard</Text>
+            </Glass>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.enrollPill}
+            activeOpacity={0.75}
             onPress={() => setDpaModalVisible(true)}
           >
-            <Text style={styles.enrollPillText}>+ Enroll Biometrics</Text>
+            <Glass
+              radius={999}
+              tintColor="rgba(152, 201, 60, 0.42)"
+              style={styles.enrollGlass}
+            >
+              <Text style={styles.enrollPillText}>+ Enroll Biometrics</Text>
+            </Glass>
           </TouchableOpacity>
         </View>
 
@@ -378,42 +474,45 @@ export default function RosterScreen({ course, setCurrentScreen }) {
 
         {/* Mini Metrics Bar */}
         <View style={styles.metricsRow}>
-          <View style={styles.metricBox}>
+          <Glass radius={22} style={styles.metricBox}>
             <Text style={styles.metricVal}>{students.length}</Text>
             <Text style={styles.metricLabel}>Total List</Text>
-          </View>
-          <View style={styles.metricBox}>
-            <Text style={[styles.metricVal, { color: '#65A30D' }]}>{presentCount}</Text>
+          </Glass>
+          <Glass radius={22} style={styles.metricBox}>
+            <Text style={[styles.metricVal, { color: '#4D7C0F' }]}>{presentCount}</Text>
             <Text style={styles.metricLabel}>Verified</Text>
-          </View>
-          <View style={styles.metricBox}>
+          </Glass>
+          <Glass radius={22} style={styles.metricBox}>
             <Text
               style={[
                 styles.metricVal,
-                { color: anomalyCount > 0 ? '#DC2626' : '#64748B' }
+                { color: anomalyCount > 0 ? '#B91C1C' : '#64748B' }
               ]}
             >
               {anomalyCount}
             </Text>
             <Text style={styles.metricLabel}>Anomalies</Text>
-          </View>
+          </Glass>
         </View>
 
         {/* Search & Filter Tabs */}
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search student name or DLSAU ID..."
-          placeholderTextColor="#94A3B8"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
+        <Glass radius={20} style={styles.searchGlass}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search student name or DLSAU ID..."
+            placeholderTextColor="#64748B"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+        </Glass>
 
-        <View style={styles.filterRow}>
+        <Glass radius={20} style={styles.filterGlass}>
           <TouchableOpacity
             style={[styles.filterTab, filterMode === 'ALL' && styles.filterTabActive]}
             onPress={() => setFilterMode('ALL')}
           >
             <Text
+              numberOfLines={1}
               style={[
                 styles.filterTabText,
                 filterMode === 'ALL' && styles.filterTabTextActive
@@ -431,6 +530,7 @@ export default function RosterScreen({ course, setCurrentScreen }) {
             onPress={() => setFilterMode('ANOMALY')}
           >
             <Text
+              numberOfLines={1}
               style={[
                 styles.filterTabText,
                 filterMode === 'ANOMALY' && styles.filterTabTextActive
@@ -439,14 +539,14 @@ export default function RosterScreen({ course, setCurrentScreen }) {
               Pending Anomalies ({anomalyCount})
             </Text>
           </TouchableOpacity>
-        </View>
+        </Glass>
 
         {/* Swipeable Student List */}
         <FlatList
           data={filteredStudents}
           keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 20 }}
+          contentContainerStyle={{ paddingBottom: 40 }}
           renderItem={({ item }) => (
             <SwipeableStudentRow
               item={item}
@@ -468,11 +568,18 @@ export default function RosterScreen({ course, setCurrentScreen }) {
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalOverlay}
         >
-          <View style={styles.modalCard}>
+          <Glass
+            radius={32}
+            topOnly
+            tint={0.74}
+            intensity={70}
+            style={styles.modalCard}
+          >
+            <View style={styles.grabber} />
             <ScrollView bounces={false} keyboardShouldPersistTaps="handled">
               <View style={styles.modalHeaderRow}>
                 <Text style={styles.modalTitle}>DPA Biometric Enrollment</Text>
-                <TouchableOpacity onPress={() => setDpaModalVisible(false)}>
+                <TouchableOpacity style={styles.closeBtn} onPress={() => setDpaModalVisible(false)}>
                   <Text style={styles.closeBtnText}>✕</Text>
                 </TouchableOpacity>
               </View>
@@ -583,7 +690,7 @@ export default function RosterScreen({ course, setCurrentScreen }) {
                 </Text>
               </TouchableOpacity>
             </ScrollView>
-          </View>
+          </Glass>
         </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
@@ -593,27 +700,51 @@ export default function RosterScreen({ course, setCurrentScreen }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F5F3EB' },
   innerContainer: { flex: 1, paddingHorizontal: 24, paddingTop: 18 },
+
+  // Liquid Glass surface: edge-lit (bright top/left, faint dark bottom/right)
+  glass: {
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.95)',
+    borderLeftColor: 'rgba(255, 255, 255, 0.8)',
+    borderRightColor: 'rgba(7, 11, 36, 0.05)',
+    borderBottomColor: 'rgba(7, 11, 36, 0.08)'
+  },
+  blobWrap: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+
   topRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 14
+    marginBottom: 16
   },
-  backBtn: { paddingVertical: 6, paddingRight: 12 },
-  backBtnText: { fontSize: 16, fontWeight: '700', color: '#070B24' },
-  enrollPill: {
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#98C93C'
+  backGlass: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 9,
+    paddingLeft: 12,
+    paddingRight: 16
   },
-  enrollPillText: { color: '#65A30D', fontSize: 13, fontWeight: '800' },
+  backChevron: {
+    fontSize: 24,
+    lineHeight: 24,
+    fontWeight: '600',
+    color: '#070B24',
+    marginRight: 6,
+    marginTop: -2
+  },
+  backBtnText: { fontSize: 15, fontWeight: '700', color: '#070B24' },
+  enrollGlass: { paddingVertical: 10, paddingHorizontal: 16 },
+  enrollPillText: { color: '#365314', fontSize: 13, fontWeight: '800' },
+
   courseTag: {
     fontSize: 12,
     fontWeight: '800',
-    color: '#65A30D',
+    color: '#4D7C0F',
     textTransform: 'uppercase',
     letterSpacing: 0.5
   },
@@ -625,58 +756,59 @@ const styles = StyleSheet.create({
   },
   subText: {
     fontSize: 13,
-    color: '#64748B',
+    color: '#475569',
     marginTop: 4,
     marginBottom: 16
   },
   metricsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 16
+    marginBottom: 14
   },
   metricBox: {
     flex: 0.31,
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 12,
-    borderRadius: 16,
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0'
+    paddingVertical: 14,
+    alignItems: 'center'
   },
-  metricVal: { fontSize: 20, fontWeight: '900', color: '#070B24' },
-  metricLabel: { fontSize: 11, color: '#64748B', fontWeight: '600', marginTop: 2 },
+  metricVal: { fontSize: 22, fontWeight: '900', color: '#070B24' },
+  metricLabel: { fontSize: 11, color: '#475569', fontWeight: '600', marginTop: 2 },
+
+  searchGlass: { marginBottom: 12 },
   searchInput: {
-    backgroundColor: '#FFFFFF',
     color: '#0F172A',
-    padding: 14,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: '#CBD5E1',
-    fontSize: 14,
-    marginBottom: 12
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    fontSize: 14
   },
-  filterRow: {
+  filterGlass: {
     flexDirection: 'row',
+    padding: 4,
     marginBottom: 14
   },
   filterTab: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    marginRight: 10,
-    backgroundColor: '#E2E8F0'
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center'
   },
-  filterTabActive: { backgroundColor: '#070B24' },
-  filterTabText: { fontSize: 13, fontWeight: '700', color: '#475569' },
-  filterTabTextActive: { color: '#FFFFFF' },
+  filterTabActive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    shadowColor: '#070B24',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
+    elevation: 2
+  },
+  filterTabText: { fontSize: 12.5, fontWeight: '700', color: '#475569' },
+  filterTabTextActive: { color: '#070B24' },
 
   // Swipeable Row Styles
   swipeWrapper: {
     position: 'relative',
     marginBottom: 10,
-    borderRadius: 18,
-    overflow: 'hidden',
-    backgroundColor: '#E2E8F0'
+    borderRadius: 22,
+    overflow: 'hidden'
   },
   hiddenActionsContainer: {
     position: 'absolute',
@@ -688,6 +820,8 @@ const styles = StyleSheet.create({
   },
   swipeBtn: {
     flex: 1,
+    marginLeft: 6,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center'
   },
@@ -696,49 +830,49 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800'
   },
-  studentCard: {
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 18,
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0'
-  },
+  studentCard: { padding: 16 },
   studentTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center'
   },
   studentName: { fontSize: 16, fontWeight: '800', color: '#070B24' },
-  studentMeta: { fontSize: 12, color: '#64748B', marginTop: 3, fontWeight: '500' },
+  studentMeta: { fontSize: 12, color: '#475569', marginTop: 3, fontWeight: '500' },
   statusBadge: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 10,
-    borderWidth: 1.5
+    borderRadius: 999,
+    borderWidth: 1
   },
   statusBadgeText: { fontSize: 12, fontWeight: '800' },
   anomalyBanner: {
     marginTop: 10,
-    backgroundColor: '#FEF2F2',
+    backgroundColor: 'rgba(254, 202, 202, 0.5)',
     padding: 10,
-    borderRadius: 10,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#FECACA'
+    borderColor: 'rgba(220, 38, 38, 0.25)'
   },
-  anomalyBannerText: { color: '#B91C1C', fontSize: 12, fontWeight: '600' },
+  anomalyBannerText: { color: '#991B1B', fontSize: 12, fontWeight: '600' },
 
   // Modal Styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(7, 11, 36, 0.45)',
+    backgroundColor: 'rgba(7, 11, 36, 0.3)',
     justifyContent: 'flex-end'
   },
   modalCard: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 24,
+    paddingHorizontal: 24,
+    paddingTop: 10,
     paddingBottom: 36
+  },
+  grabber: {
+    alignSelf: 'center',
+    width: 38,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: 'rgba(7, 11, 36, 0.18)',
+    marginBottom: 14
   },
   modalHeaderRow: {
     flexDirection: 'row',
@@ -746,23 +880,31 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
   modalTitle: { fontSize: 22, fontWeight: '900', color: '#070B24' },
-  closeBtnText: { fontSize: 20, fontWeight: '800', color: '#64748B' },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(7, 11, 36, 0.08)',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  closeBtnText: { fontSize: 14, fontWeight: '800', color: '#334155' },
   modalSubtitle: {
     fontSize: 12,
-    color: '#65A30D',
+    color: '#4D7C0F',
     fontWeight: '700',
     marginBottom: 16,
     marginTop: 2
   },
   label: { color: '#1E293B', fontSize: 13, marginBottom: 6, fontWeight: '700' },
   input: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: 'rgba(255, 255, 255, 0.65)',
     color: '#0F172A',
     padding: 14,
-    borderRadius: 14,
+    borderRadius: 16,
     marginBottom: 14,
-    borderWidth: 1.5,
-    borderColor: '#CBD5E1',
+    borderWidth: 1,
+    borderColor: 'rgba(7, 11, 36, 0.1)',
     fontSize: 14
   },
 
@@ -777,14 +919,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: 'rgba(255, 255, 255, 0.6)',
     paddingVertical: 14,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: '#CBD5E1'
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(7, 11, 36, 0.1)'
   },
   photoOptionBtnActive: {
-    backgroundColor: '#F0FDF4',
+    backgroundColor: 'rgba(152, 201, 60, 0.28)',
     borderColor: '#65A30D'
   },
   photoOptionIcon: {
@@ -799,11 +941,11 @@ const styles = StyleSheet.create({
   previewBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F0FDF4',
+    backgroundColor: 'rgba(152, 201, 60, 0.2)',
     padding: 12,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: '#BBF7D0',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(101, 163, 13, 0.35)',
     marginBottom: 14
   },
   previewThumb: {
@@ -819,17 +961,17 @@ const styles = StyleSheet.create({
   dpaConsentBox: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: '#F8FAFC',
-    padding: 12,
-    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    padding: 14,
+    borderRadius: 18,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0'
+    borderColor: 'rgba(7, 11, 36, 0.08)'
   },
   checkbox: {
     width: 22,
     height: 22,
-    borderRadius: 6,
+    borderRadius: 7,
     borderWidth: 2,
     borderColor: '#64748B',
     marginRight: 10,
@@ -839,11 +981,11 @@ const styles = StyleSheet.create({
   },
   checkboxChecked: { backgroundColor: '#65A30D', borderColor: '#65A30D' },
   checkmark: { color: '#FFFFFF', fontWeight: '900', fontSize: 13 },
-  dpaText: { flex: 1, fontSize: 12, color: '#475569', lineHeight: 18 },
+  dpaText: { flex: 1, fontSize: 12, color: '#334155', lineHeight: 18 },
   primaryBtn: {
-    backgroundColor: '#070B24',
+    backgroundColor: 'rgba(7, 11, 36, 0.92)',
     paddingVertical: 16,
-    borderRadius: 16,
+    borderRadius: 999,
     alignItems: 'center'
   },
   primaryBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' }
