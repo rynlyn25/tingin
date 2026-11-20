@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -11,12 +11,29 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Animated
+  Animated,
+  Dimensions,
+  Easing,
+  LayoutAnimation,
+  UIManager
 } from 'react-native';
-import Svg, { Path, Rect, Line } from 'react-native-svg';
+import { BlurView } from 'expo-blur';
+import Svg, {
+  Defs,
+  LinearGradient,
+  RadialGradient,
+  Stop,
+  Rect,
+  Line,
+  Circle
+} from 'react-native-svg';
 
-// Crayola classic 8-box colors (Black removed).
-// Press and hold a swatch to pick a lighter or darker shade of that color.
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+
 const COLOR_PRESETS = [
   { name: 'Red', hex: '#ED0A3F' },
   { name: 'Orange', hex: '#FF8833' },
@@ -28,10 +45,34 @@ const COLOR_PRESETS = [
 ];
 const DEFAULT_COLOR = '#0066FF';
 
+const springLayout = () => {
+  LayoutAnimation.configureNext({
+    duration: 320,
+    create: {
+      type: LayoutAnimation.Types.spring,
+      property: LayoutAnimation.Properties.opacity,
+      springDamping: 0.78
+    },
+    update: {
+      type: LayoutAnimation.Types.spring,
+      springDamping: 0.78
+    },
+    delete: {
+      type: LayoutAnimation.Types.easeInEaseOut,
+      property: LayoutAnimation.Properties.opacity
+    }
+  });
+};
+
 // ---- Color helpers ----
 const hexToRgb = (hex) => {
-  const h = hex.replace('#', '');
+  const h = (hex || DEFAULT_COLOR).replace('#', '');
   return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+};
+
+const hexToRgba = (hex, alpha) => {
+  const [r, g, b] = hexToRgb(hex);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
 
 const rgbToHex = (rgb) =>
@@ -47,7 +88,6 @@ const mixColor = (hex, target, amount) => {
   return rgbToHex(a.map((v, i) => v + (b[i] - v) * amount));
 };
 
-// 3 lighter tints, the base color, then 3 darker shades
 const getShades = (base) => [
   mixColor(base, '#FFFFFF', 0.7),
   mixColor(base, '#FFFFFF', 0.5),
@@ -66,55 +106,19 @@ const luminance = (hex) => {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 };
 
-// Picks readable text / button colors for any card color (light or dark)
 const getCardTheme = (bg) => {
   const L = luminance(bg);
   const useWhite = 1.05 / (L + 0.05) > (L + 0.05) / 0.056;
   const rgb = useWhite ? '255, 255, 255' : '7, 11, 36';
   return {
     ink: useWhite ? '#FFFFFF' : '#0B1320',
-    inkSoft: `rgba(${rgb}, 0.72)`,
-    line: `rgba(${rgb}, 0.2)`,
-    badgeBg: `rgba(${rgb}, 0.16)`,
-    solidBg: useWhite ? '#FFFFFF' : '#070B24',
+    inkSoft: `rgba(${rgb}, 0.78)`,
+    line: `rgba(${rgb}, 0.22)`,
+    solidBg: useWhite ? 'rgba(255, 255, 255, 0.92)' : 'rgba(7, 11, 36, 0.88)',
     solidText: useWhite ? '#0B1320' : '#FFFFFF',
-    softPillBg: useWhite ? 'rgba(255, 255, 255, 0.22)' : 'rgba(255, 255, 255, 0.55)'
+    softPillBg: useWhite ? 'rgba(255, 255, 255, 0.24)' : 'rgba(255, 255, 255, 0.55)'
   };
 };
-
-
-const INITIAL_COURSES = [
-  {
-    course_id: 'CS301',
-    course_code: 'CS 301',
-    course_name: 'Software Engineering',
-    schedule: 'MWF 09:00 AM',
-    room: 'Osmeña Rm 302',
-    enrolled_count: 35,
-    pending_anomalies: 2,
-    card_color: '#01A638'
-  },
-  {
-    course_id: 'CS305',
-    course_code: 'CS 305',
-    course_name: 'Architecture & Org',
-    schedule: 'TTH 01:00 PM',
-    room: 'Osmeña Rm 304',
-    enrolled_count: 40,
-    pending_anomalies: 0,
-    card_color: '#FF8833'
-  },
-  {
-    course_id: 'CS309',
-    course_code: 'CS 309',
-    course_name: 'Human-Computer Interaction',
-    schedule: 'MWF 10:30 AM',
-    room: 'Ledesma Hall 201',
-    enrolled_count: 38,
-    pending_anomalies: 1,
-    card_color: '#FBE870'
-  }
-];
 
 const WEEKLY_BARS = [
   { day: 'Mon', val: 0.62, active: false },
@@ -126,20 +130,100 @@ const WEEKLY_BARS = [
   { day: 'Sun', val: 0.18, active: false }
 ];
 
-function HatchedBar({ height, active }) {
+// Gently drifting ambient orbs behind the glass deck
+function DeckAmbientBackground({ accent }) {
+  const floatAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(floatAnim, {
+          toValue: 1,
+          duration: 6000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true
+        }),
+        Animated.timing(floatAnim, {
+          toValue: 0,
+          duration: 6000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true
+        })
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, []);
+
+  const warmOrb = mixColor(accent || '#98C93C', '#FFFFFF', 0.35);
+  const shiftY = floatAnim.interpolate({ inputRange: [0, 1], outputRange: [-14, 18] });
+  const shiftX = floatAnim.interpolate({ inputRange: [0, 1], outputRange: [12, -14] });
+
+  return (
+    <View style={[StyleSheet.absoluteFill, { backgroundColor: '#F5F3EB' }]} pointerEvents="none">
+      <Animated.View
+        style={[
+          StyleSheet.absoluteFill,
+          { transform: [{ translateX: shiftX }, { translateY: shiftY }] }
+        ]}
+      >
+        <Svg width={SCREEN_W} height={SCREEN_H}>
+          <Defs>
+            <RadialGradient id="deckOrb1" cx="15%" cy="22%" r="55%">
+              <Stop offset="0%" stopColor={warmOrb} stopOpacity="0.34" />
+              <Stop offset="100%" stopColor="#F5F3EB" stopOpacity="0" />
+            </RadialGradient>
+            <RadialGradient id="deckOrb2" cx="88%" cy="58%" r="55%">
+              <Stop offset="0%" stopColor="#D3C499" stopOpacity="0.48" />
+              <Stop offset="100%" stopColor="#F5F3EB" stopOpacity="0" />
+            </RadialGradient>
+          </Defs>
+          <Circle cx={SCREEN_W * 0.15} cy={SCREEN_H * 0.22} r={SCREEN_W * 0.78} fill="url(#deckOrb1)" />
+          <Circle cx={SCREEN_W * 0.88} cy={SCREEN_H * 0.58} r={SCREEN_W * 0.78} fill="url(#deckOrb2)" />
+        </Svg>
+      </Animated.View>
+    </View>
+  );
+}
+
+function GlassSheen({ id }) {
+  return (
+    <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" pointerEvents="none">
+      <Defs>
+        <LinearGradient id={id} x1="0%" y1="0%" x2="100%" y2="100%">
+          <Stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.46" />
+          <Stop offset="38%" stopColor="#FFFFFF" stopOpacity="0.12" />
+          <Stop offset="100%" stopColor="#FFFFFF" stopOpacity="0.02" />
+        </LinearGradient>
+      </Defs>
+      <Rect width="100%" height="100%" fill={`url(#${id})`} />
+    </Svg>
+  );
+}
+
+function HatchedBar({ height, active, revealAnim }) {
   const w = 28;
+  const barTranslateY = revealAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [height, 0]
+  });
+
   if (active) {
     return (
-      <View
-        style={{
-          width: w,
-          height,
-          backgroundColor: '#070B24',
-          borderRadius: 7
-        }}
-      />
+      <View style={{ width: w, height, borderRadius: 7, overflow: 'hidden' }}>
+        <Animated.View
+          style={{
+            width: w,
+            height,
+            backgroundColor: '#070B24',
+            borderRadius: 7,
+            transform: [{ translateY: barTranslateY }]
+          }}
+        />
+      </View>
     );
   }
+
   const stripeSpacing = 6;
   const lines = [];
   for (let i = -height; i < w + height; i += stripeSpacing) {
@@ -150,18 +234,177 @@ function HatchedBar({ height, active }) {
         y1={0}
         x2={i - height}
         y2={height}
-        stroke="rgba(7, 11, 36, 0.25)"
+        stroke="rgba(7, 11, 36, 0.28)"
         strokeWidth="1.6"
       />
     );
   }
   return (
     <View style={{ width: w, height, borderRadius: 7, overflow: 'hidden' }}>
-      <Svg width={w} height={height}>
-        <Rect width={w} height={height} fill="rgba(7, 11, 36, 0.04)" rx={7} />
-        {lines}
-      </Svg>
+      <Animated.View style={{ transform: [{ translateY: barTranslateY }] }}>
+        <Svg width={w} height={height}>
+          <Rect width={w} height={height} fill="rgba(255, 255, 255, 0.25)" rx={7} />
+          {lines}
+        </Svg>
+      </Animated.View>
     </View>
+  );
+}
+
+// Glass Wallet Card with Entrance + Tactile Press Scale (Scroll math kept on outer wrapper)
+function GlassDeckCard({
+  item,
+  index,
+  isExpanded,
+  scrollY,
+  cardStep,
+  onToggleExpand,
+  onOpenRoster,
+  onDelete
+}) {
+  const cardBg = item.card_color || DEFAULT_COLOR;
+  const theme = getCardTheme(cardBg);
+
+  const enterAnim = useRef(new Animated.Value(0)).current;
+  const pressScale = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.spring(enterAnim, {
+      toValue: 1,
+      delay: Math.min(index * 75, 360),
+      friction: 7,
+      tension: 55,
+      useNativeDriver: true
+    }).start();
+  }, []);
+
+  // Exact scroll pinning & scale math preserved
+  const startPin = index * cardStep;
+  const translateY = scrollY.interpolate({
+    inputRange: [-200, 0, startPin, startPin + 600],
+    outputRange: [index * 8, 0, 0, 600 - index * (cardStep - 14)],
+    extrapolate: 'clamp'
+  });
+
+  const scrollScale = scrollY.interpolate({
+    inputRange: [startPin - 40, startPin + 220],
+    outputRange: [1, 0.965],
+    extrapolate: 'clamp'
+  });
+
+  const enterTranslateY = enterAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [34, 0]
+  });
+
+  return (
+    <Animated.View
+      style={[
+        styles.walletCardShadow,
+        {
+          marginTop: index === 0 ? 0 : -38,
+          zIndex: index + 1,
+          transform: [{ translateY }, { scale: scrollScale }]
+        }
+      ]}
+    >
+      <Animated.View
+        style={{
+          opacity: enterAnim,
+          transform: [{ translateY: enterTranslateY }, { scale: pressScale }]
+        }}
+      >
+        <View style={styles.walletCardClip}>
+          <BlurView intensity={55} tint="light" style={StyleSheet.absoluteFill} />
+          <View
+            style={[
+              StyleSheet.absoluteFill,
+              { backgroundColor: hexToRgba(cardBg, 0.68) }
+            ]}
+          />
+          <GlassSheen id={`cardSheen-${item.course_id}`} />
+
+          <TouchableOpacity
+            activeOpacity={0.95}
+            style={styles.walletCardInner}
+            onPressIn={() =>
+              Animated.spring(pressScale, {
+                toValue: 0.975,
+                friction: 7,
+                useNativeDriver: true
+              }).start()
+            }
+            onPressOut={() =>
+              Animated.spring(pressScale, {
+                toValue: 1,
+                friction: 6,
+                useNativeDriver: true
+              }).start()
+            }
+            onPress={onToggleExpand}
+          >
+            {/* Clean card face: ONLY sched, room, subject, and number of students */}
+            <View style={styles.cardMainRow}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={[styles.cardCategorySub, { color: theme.inkSoft }]}>
+                  {item.schedule} • {item.room}
+                </Text>
+                <Text
+                  style={[styles.cardTitleText, { color: theme.ink }]}
+                  numberOfLines={1}
+                >
+                  {item.course_name}
+                </Text>
+              </View>
+
+              <Text style={[styles.cardRightMetric, { color: theme.ink }]}>
+                {item.enrolled_count}{' '}
+                {item.enrolled_count === 1 ? 'student' : 'students'}
+              </Text>
+            </View>
+
+            {/* Expanded Action Bar */}
+            {isExpanded && (
+              <View style={[styles.expandedDrawer, { borderTopColor: theme.line }]}>
+                <View style={styles.actionRowButtons}>
+                  <TouchableOpacity
+                    style={[styles.actionDarkPill, { backgroundColor: theme.solidBg }]}
+                    onPress={() => onOpenRoster && onOpenRoster(item)}
+                  >
+                    <Text style={[styles.actionDarkPillText, { color: theme.solidText }]}>
+                      Open List
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.actionLightPill, { backgroundColor: theme.softPillBg }]}
+                    onPress={() =>
+                      Alert.alert(
+                        item.course_code,
+                        `Starting YOLOv8 live attendance feed for ${item.course_name}.`
+                      )
+                    }
+                  >
+                    <Text style={[styles.actionLightPillText, { color: theme.ink }]}>
+                      Live Feed
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.actionDeletePill}
+                    onPress={() =>
+                      onDelete(item.course_id, item.course_code, item.course_name)
+                    }
+                  >
+                    <Text style={styles.actionDeleteText}>Delete</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
+    </Animated.View>
   );
 }
 
@@ -192,10 +435,12 @@ function ShadeStrip({ base, current, onPick, labelColor }) {
 export default function DashboardScreen({
   email,
   fullName,
+  courses = [],
+  onAddCourse,
+  onDeleteCourse,
   setCurrentScreen,
   onOpenRoster
 }) {
-  const [courses, setCourses] = useState(INITIAL_COURSES);
   const [selectedCardId, setSelectedCardId] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
@@ -212,6 +457,39 @@ export default function DashboardScreen({
   const [focusedField, setFocusedField] = useState(null);
 
   const scrollY = useRef(new Animated.Value(0)).current;
+  const chevronRot = useRef(new Animated.Value(0)).current;
+  const barAnims = useRef(WEEKLY_BARS.map(() => new Animated.Value(0))).current;
+
+  useEffect(() => {
+    Animated.stagger(
+      55,
+      barAnims.map((anim) =>
+        Animated.spring(anim, {
+          toValue: 1,
+          delay: 180,
+          friction: 7,
+          tension: 50,
+          useNativeDriver: true
+        })
+      )
+    ).start();
+  }, []);
+
+  const toggleMenu = () => {
+    springLayout();
+    const next = !menuVisible;
+    setMenuVisible(next);
+    Animated.spring(chevronRot, {
+      toValue: next ? 1 : 0,
+      friction: 7,
+      useNativeDriver: true
+    }).start();
+  };
+
+  const chevronRotateDeg = chevronRot.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '180deg']
+  });
 
   const totalStudents = courses.reduce((sum, c) => sum + (c.enrolled_count || 0), 0);
   const totalAnomalies = courses.reduce((sum, c) => sum + (c.pending_anomalies || 0), 0);
@@ -234,7 +512,8 @@ export default function DashboardScreen({
       card_base: selectedBase
     };
 
-    setCourses([newCourse, ...courses]);
+    springLayout();
+    onAddCourse && onAddCourse(newCourse);
     setCourseCode('');
     setCourseName('');
     setSchedule('');
@@ -247,51 +526,48 @@ export default function DashboardScreen({
   };
 
   const handleDeleteClass = (courseId, code, name) => {
-    Alert.alert(
-      'Delete Class',
-      `Remove ${code} (${name}) from your deck?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            setCourses((prev) => prev.filter((item) => item.course_id !== courseId));
-            if (selectedCardId === courseId) setSelectedCardId(null);
-          }
+    Alert.alert('Delete Class', `Remove ${code} (${name}) from your deck?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          springLayout();
+          onDeleteCourse && onDeleteCourse(courseId);
+          if (selectedCardId === courseId) setSelectedCardId(null);
         }
-      ]
-    );
-  };
-
-  const handleChangeCardColor = (courseId, newColor, baseHex) => {
-    setCourses((prev) =>
-      prev.map((c) =>
-        c.course_id === courseId
-          ? { ...c, card_color: newColor, card_base: baseHex || newColor }
-          : c
-      )
-    );
+      }
+    ]);
   };
 
   const CARD_STEP = 126;
 
   return (
     <SafeAreaView style={styles.container}>
+      <DeckAmbientBackground accent={courses[0]?.card_color} />
+
       {/* Editorial Header */}
       <View style={styles.headerBar}>
         <TouchableOpacity
           style={styles.titleDropdownBtn}
           activeOpacity={0.7}
-          onPress={() => setMenuVisible(!menuVisible)}
+          onPress={toggleMenu}
         >
           <Text style={styles.headerTitle}>Classes</Text>
-          <Text style={styles.chevronIcon}>{menuVisible ? '⌃' : '⌄'}</Text>
+          <Animated.Text
+            style={[
+              styles.chevronIcon,
+              { transform: [{ rotate: chevronRotateDeg }] }
+            ]}
+          >
+            ⌄
+          </Animated.Text>
         </TouchableOpacity>
 
         <View style={styles.headerRightActions}>
           <TouchableOpacity
             style={styles.addBtnCircle}
+            activeOpacity={0.82}
             onPress={() => {
               setShadePicker(null);
               setModalVisible(true);
@@ -302,41 +578,43 @@ export default function DashboardScreen({
         </View>
       </View>
 
-      {/* Collapsible Quick Drawer */}
+      {/* Collapsible Glass Quick Drawer */}
       {menuVisible && (
-        <View style={styles.quickDrawer}>
-          <View style={styles.drawerProfileRow}>
-            <View>
-              <Text style={styles.drawerName}>
-                {fullName || 'DLSAU Professor'}
-              </Text>
-              <Text style={styles.drawerEmail}>{email}</Text>
-            </View>
-            <View style={styles.drawerPills}>
-              <TouchableOpacity
-                style={styles.drawerPillBtn}
-                onPress={() => {
-                  setMenuVisible(false);
-                  setCurrentScreen('HEALTH');
-                }}
-              >
-                <Text style={styles.drawerPillText}>System Health</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.drawerPillBtn, styles.logoutPill]}
-                onPress={() => setCurrentScreen('AUTH')}
-              >
-                <Text style={[styles.drawerPillText, { color: '#DC2626' }]}>
-                  Log Out
+        <View style={styles.quickDrawerShadow}>
+          <BlurView intensity={55} tint="light" style={styles.quickDrawerGlass}>
+            <View style={styles.drawerProfileRow}>
+              <View>
+                <Text style={styles.drawerName}>
+                  {fullName || 'DLSAU Professor'}
                 </Text>
-              </TouchableOpacity>
+                <Text style={styles.drawerEmail}>{email}</Text>
+              </View>
+              <View style={styles.drawerPills}>
+                <TouchableOpacity
+                  style={styles.drawerPillBtn}
+                  onPress={() => {
+                    setMenuVisible(false);
+                    setCurrentScreen('HEALTH');
+                  }}
+                >
+                  <Text style={styles.drawerPillText}>System Health</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.drawerPillBtn, styles.logoutPill]}
+                  onPress={() => setCurrentScreen('AUTH')}
+                >
+                  <Text style={[styles.drawerPillText, { color: '#DC2626' }]}>
+                    Log Out
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
+          </BlurView>
         </View>
       )}
 
-      {/* Stacked Wallet Card Deck */}
+      {/* Stacked Glass Wallet Card Deck */}
       <Animated.ScrollView
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
@@ -346,245 +624,103 @@ export default function DashboardScreen({
           { useNativeDriver: true }
         )}
       >
-        {courses.map((item, index) => {
-          const cardBg = item.card_color || DEFAULT_COLOR;
-          const theme = getCardTheme(cardBg);
-          const activeBase = item.card_base || cardBg;
-          const isExpanded = selectedCardId === item.course_id;
+        {courses.map((item, index) => (
+          <GlassDeckCard
+            key={item.course_id}
+            item={item}
+            index={index}
+            isExpanded={selectedCardId === item.course_id}
+            scrollY={scrollY}
+            cardStep={CARD_STEP}
+            onToggleExpand={() => {
+              springLayout();
+              setSelectedCardId(
+                selectedCardId === item.course_id ? null : item.course_id
+              );
+            }}
+            onOpenRoster={onOpenRoster}
+            onDelete={handleDeleteClass}
+          />
+        ))}
 
-          const startPin = index * CARD_STEP;
-          const translateY = scrollY.interpolate({
-            inputRange: [-200, 0, startPin, startPin + 600],
-            outputRange: [index * 8, 0, 0, 600 - index * (CARD_STEP - 14)],
-            extrapolate: 'clamp'
-          });
-
-          const scale = scrollY.interpolate({
-            inputRange: [startPin - 40, startPin + 220],
-            outputRange: [1, 0.965],
-            extrapolate: 'clamp'
-          });
-
-          return (
-            <Animated.View
-              key={item.course_id}
-              style={[
-                styles.walletCard,
-                {
-                  backgroundColor: cardBg,
-                  marginTop: index === 0 ? 0 : -38,
-                  zIndex: index + 1,
-                  transform: [{ translateY }, { scale }]
-                }
-              ]}
-            >
-              <TouchableOpacity
-                activeOpacity={0.92}
-                onPress={() => {
-                  setShadePicker(null);
-                  setSelectedCardId(isExpanded ? null : item.course_id);
-                }}
-              >
-                <View style={styles.cardTopRow}>
-                  <View style={[styles.glyphBadge, { backgroundColor: theme.badgeBg }]}>
-                    <Text
-                      style={[styles.glyphText, { color: theme.ink }]}
-                      numberOfLines={1}
-                    >
-                      {item.course_code.replace(/\s+/g, '').slice(0, 8)}
-                    </Text>
-                  </View>
-
-                  {item.pending_anomalies > 0 && (
-                    <View
-                      style={[styles.anomalyDotBadge, { backgroundColor: theme.solidBg }]}
-                    >
-                      <Text style={[styles.anomalyDotText, { color: theme.solidText }]}>
-                        {item.pending_anomalies} flagged
-                      </Text>
-                    </View>
-                  )}
-                </View>
-
-                <View style={styles.cardMainRow}>
-                  <View style={{ flex: 1, paddingRight: 12 }}>
-                    <Text style={[styles.cardCategorySub, { color: theme.inkSoft }]}>
-                      {item.schedule} • {item.room}
-                    </Text>
-                    <Text
-                      style={[styles.cardTitleText, { color: theme.ink }]}
-                      numberOfLines={1}
-                    >
-                      {item.course_name}
-                    </Text>
-                  </View>
-
-                  <Text style={[styles.cardRightMetric, { color: theme.ink }]}>
-                    {item.enrolled_count}{' '}
-                    {item.enrolled_count === 1 ? 'student' : 'students'}
-                  </Text>
-                </View>
-
-                {/* Expanded Action Bar with Color Picker */}
-                {isExpanded && (
-                  <View style={[styles.expandedDrawer, { borderTopColor: theme.line }]}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.pickerLabel, { color: theme.inkSoft }]}>
-                        Card Theme Color
-                      </Text>
-                      <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        contentContainerStyle={styles.colorPickerScroll}
-                      >
-                        {COLOR_PRESETS.map(({ name, hex }) => (
-                          <TouchableOpacity
-                            key={hex}
-                            accessibilityLabel={`${name}. Hold for shades.`}
-                            delayLongPress={350}
-                            style={[
-                              styles.colorSwatch,
-                              { backgroundColor: hex },
-                              activeBase === hex && styles.colorSwatchActive
-                            ]}
-                            onPress={() => {
-                              handleChangeCardColor(item.course_id, hex, hex);
-                              setShadePicker(null);
-                            }}
-                            onLongPress={() =>
-                              setShadePicker({
-                                target: 'card',
-                                courseId: item.course_id,
-                                base: hex
-                              })
-                            }
-                          />
-                        ))}
-                      </ScrollView>
-
-                      {shadePicker &&
-                      shadePicker.target === 'card' &&
-                      shadePicker.courseId === item.course_id ? (
-                        <ShadeStrip
-                          base={shadePicker.base}
-                          current={cardBg}
-                          labelColor={theme.inkSoft}
-                          onPick={(shade) =>
-                            handleChangeCardColor(item.course_id, shade, shadePicker.base)
-                          }
-                        />
-                      ) : (
-                        <Text style={[styles.shadeLabel, { color: theme.inkSoft, marginBottom: 14 }]}>
-                          Hold a color for lighter or darker shades.
-                        </Text>
-                      )}
-
-                      <View style={styles.actionRowButtons}>
-                        <TouchableOpacity
-                          style={[styles.actionDarkPill, { backgroundColor: theme.solidBg }]}
-                          onPress={() => onOpenRoster && onOpenRoster(item)}
-                        >
-                          <Text style={[styles.actionDarkPillText, { color: theme.solidText }]}>
-                            Open List
-                          </Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={[styles.actionLightPill, { backgroundColor: theme.softPillBg }]}
-                          onPress={() =>
-                            Alert.alert(
-                              item.course_code,
-                              `Starting YOLOv8 live attendance feed for ${item.course_name}.`
-                            )
-                          }
-                        >
-                          <Text style={[styles.actionLightPillText, { color: theme.ink }]}>
-                            Live Feed
-                          </Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={styles.actionDeletePill}
-                          onPress={() =>
-                            handleDeleteClass(
-                              item.course_id,
-                              item.course_code,
-                              item.course_name
-                            )
-                          }
-                        >
-                          <Text style={styles.actionDeleteText}>Delete</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  </View>
-                )}
-              </TouchableOpacity>
-            </Animated.View>
-          );
-        })}
-
-        {/* Analytics Card */}
+        {/* Glassmorphic Analytics Card */}
         <View
           style={[
-            styles.walletCard,
-            styles.analyticsCard,
+            styles.walletCardShadow,
             {
               marginTop: courses.length === 0 ? 0 : -38,
               zIndex: courses.length + 2
             }
           ]}
         >
-          <View style={styles.cardTopRow}>
-            <View style={styles.glyphBadge}>
-              <Text style={styles.glyphText}>AI</Text>
-            </View>
-            <TouchableOpacity onPress={() => setCurrentScreen('HEALTH')}>
-              <Text style={styles.healthLinkText}>System Health ↗</Text>
-            </TouchableOpacity>
-          </View>
+          <View style={styles.walletCardClip}>
+            <BlurView
+              intensity={60}
+              tint="light"
+              style={StyleSheet.absoluteFill}
+            />
+            <View
+              style={[
+                StyleSheet.absoluteFill,
+                { backgroundColor: 'rgba(211, 196, 153, 0.72)' }
+              ]}
+            />
+            <GlassSheen id="analyticsSheen" />
 
-          <View style={styles.cardMainRow}>
-            <View>
-              <Text style={styles.cardCategorySub}>
-                Vision Attendance Summary
-              </Text>
-              <Text style={styles.cardTitleText}>Weekly Rate</Text>
-            </View>
-            <Text style={styles.cardRightMetric}>
-              {totalAnomalies > 0 ? `${totalAnomalies} alerts` : '96.4%'}
-            </Text>
-          </View>
-
-          <View style={styles.chartRow}>
-            {WEEKLY_BARS.map((bar) => (
-              <View key={bar.day} style={styles.barCol}>
-                <View style={styles.barTrack}>
-                  <HatchedBar
-                    height={Math.round(bar.val * 88)}
-                    active={bar.active}
-                  />
+            <View style={[styles.walletCardInner, { paddingBottom: 26 }]}>
+              <View style={styles.cardTopRow}>
+                <View style={styles.glyphBadge}>
+                  <Text style={styles.glyphText}>AI</Text>
                 </View>
-                <Text
-                  style={[
-                    styles.barDayLabel,
-                    bar.active && styles.barDayLabelActive
-                  ]}
-                >
-                  {bar.day}
+                <TouchableOpacity onPress={() => setCurrentScreen('HEALTH')}>
+                  <Text style={styles.healthLinkText}>System Health ↗</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.cardMainRow}>
+                <View>
+                  <Text style={styles.cardCategorySub}>
+                    Vision Attendance Summary
+                  </Text>
+                  <Text style={styles.cardTitleText}>Weekly Rate</Text>
+                </View>
+                <Text style={styles.cardRightMetric}>
+                  {totalAnomalies > 0 ? `${totalAnomalies} alerts` : '96.4%'}
                 </Text>
               </View>
-            ))}
-          </View>
 
-          <View style={styles.analyticsFooterRow}>
-            <Text style={styles.allTimeLabel}>All Classes</Text>
-            <Text style={styles.allTimeValue}>{totalStudents} Enrolled</Text>
+              <View style={styles.chartRow}>
+                {WEEKLY_BARS.map((bar, idx) => (
+                  <View key={bar.day} style={styles.barCol}>
+                    <View style={styles.barTrack}>
+                      <HatchedBar
+                        height={Math.round(bar.val * 88)}
+                        active={bar.active}
+                        revealAnim={barAnims[idx]}
+                      />
+                    </View>
+                    <Text
+                      style={[
+                        styles.barDayLabel,
+                        bar.active && styles.barDayLabelActive
+                      ]}
+                    >
+                      {bar.day}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+
+              <View style={styles.analyticsFooterRow}>
+                <Text style={styles.allTimeLabel}>All Classes</Text>
+                <Text style={styles.allTimeValue}>{totalStudents} Enrolled</Text>
+              </View>
+            </View>
           </View>
         </View>
       </Animated.ScrollView>
 
-      {/* MODAL: ADD NEW CLASS WITH COLOR PICKER */}
+      {/* MODAL: ADD NEW CLASS */}
       <Modal
         visible={modalVisible}
         animationType="slide"
@@ -609,10 +745,7 @@ export default function DashboardScreen({
 
               <Text style={styles.label}>Course Code</Text>
               <TextInput
-                style={[
-                  styles.input,
-                  focusedField === 'CODE' && styles.inputFocused
-                ]}
+                style={[styles.input, focusedField === 'CODE' && styles.inputFocused]}
                 placeholder="e.g. CS 309"
                 placeholderTextColor="#94A3B8"
                 value={courseCode}
@@ -623,10 +756,7 @@ export default function DashboardScreen({
 
               <Text style={styles.label}>Course Name</Text>
               <TextInput
-                style={[
-                  styles.input,
-                  focusedField === 'NAME' && styles.inputFocused
-                ]}
+                style={[styles.input, focusedField === 'NAME' && styles.inputFocused]}
                 placeholder="e.g. Human-Computer Interaction"
                 placeholderTextColor="#94A3B8"
                 value={courseName}
@@ -637,10 +767,7 @@ export default function DashboardScreen({
 
               <Text style={styles.label}>Schedule</Text>
               <TextInput
-                style={[
-                  styles.input,
-                  focusedField === 'SCHED' && styles.inputFocused
-                ]}
+                style={[styles.input, focusedField === 'SCHED' && styles.inputFocused]}
                 placeholder="e.g. MWF 10:30 AM"
                 placeholderTextColor="#94A3B8"
                 value={schedule}
@@ -653,10 +780,7 @@ export default function DashboardScreen({
                 <View style={{ flex: 0.58 }}>
                   <Text style={styles.label}>Room Assignment</Text>
                   <TextInput
-                    style={[
-                      styles.input,
-                      focusedField === 'ROOM' && styles.inputFocused
-                    ]}
+                    style={[styles.input, focusedField === 'ROOM' && styles.inputFocused]}
                     placeholder="Osmeña Rm 302"
                     placeholderTextColor="#94A3B8"
                     value={room}
@@ -669,10 +793,7 @@ export default function DashboardScreen({
                 <View style={{ flex: 0.38 }}>
                   <Text style={styles.label}>Enrolled</Text>
                   <TextInput
-                    style={[
-                      styles.input,
-                      focusedField === 'COUNT' && styles.inputFocused
-                    ]}
+                    style={[styles.input, focusedField === 'COUNT' && styles.inputFocused]}
                     placeholder="35"
                     placeholderTextColor="#94A3B8"
                     keyboardType="number-pad"
@@ -684,7 +805,6 @@ export default function DashboardScreen({
                 </View>
               </View>
 
-              {/* Color Picker (hold a color for shades) */}
               <Text style={styles.label}>Card Color Theme</Text>
               <ScrollView
                 horizontal
@@ -709,20 +829,20 @@ export default function DashboardScreen({
                         setSelectedBase(hex);
                         setShadePicker(null);
                       }}
-                      onLongPress={() => setShadePicker({ target: 'modal', base: hex })}
+                      onLongPress={() => setShadePicker(hex)}
                     />
                   );
                 })}
               </ScrollView>
 
-              {shadePicker && shadePicker.target === 'modal' ? (
+              {shadePicker ? (
                 <ShadeStrip
-                  base={shadePicker.base}
+                  base={shadePicker}
                   current={selectedColor}
                   labelColor="#64748B"
                   onPick={(shade) => {
                     setSelectedColor(shade);
-                    setSelectedBase(shadePicker.base);
+                    setSelectedBase(shadePicker);
                   }}
                 />
               ) : (
@@ -731,10 +851,7 @@ export default function DashboardScreen({
                 </Text>
               )}
 
-              <TouchableOpacity
-                style={styles.primaryBtn}
-                onPress={handleAddClass}
-              >
+              <TouchableOpacity style={styles.primaryBtn} onPress={handleAddClass}>
                 <Text style={styles.primaryBtnText}>Add Card to Deck</Text>
               </TouchableOpacity>
             </ScrollView>
@@ -746,10 +863,7 @@ export default function DashboardScreen({
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F3EB'
-  },
+  container: { flex: 1, backgroundColor: '#F5F3EB' },
   headerBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -758,10 +872,7 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 14
   },
-  titleDropdownBtn: {
-    flexDirection: 'row',
-    alignItems: 'center'
-  },
+  titleDropdownBtn: { flexDirection: 'row', alignItems: 'center' },
   headerTitle: {
     fontSize: 30,
     fontWeight: '800',
@@ -775,115 +886,99 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     marginTop: -2
   },
-  headerRightActions: {
-    flexDirection: 'row',
-    alignItems: 'center'
-  },
+  headerRightActions: { flexDirection: 'row', alignItems: 'center' },
   addBtnCircle: {
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: '#070B24',
+    backgroundColor: 'rgba(7, 11, 36, 0.9)',
     alignItems: 'center',
     justifyContent: 'center'
   },
-  addBtnPlus: {
-    color: '#FFFFFF',
-    fontSize: 22,
-    fontWeight: '600',
-    marginTop: -2
-  },
-  quickDrawer: {
+  addBtnPlus: { color: '#FFFFFF', fontSize: 22, fontWeight: '600', marginTop: -2 },
+
+  // Glass Quick Drawer
+  quickDrawerShadow: {
     marginHorizontal: 14,
     marginBottom: 12,
-    padding: 16,
-    backgroundColor: '#FFFFFF',
     borderRadius: 22,
-    borderWidth: 1,
-    borderColor: '#E2E8F0'
+    shadowColor: '#070B24',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 4
+  },
+  quickDrawerGlass: {
+    borderRadius: 22,
+    overflow: 'hidden',
+    padding: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.52)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.8)'
   },
   drawerProfileRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center'
   },
-  drawerName: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#070B24'
-  },
-  drawerEmail: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 2
-  },
-  drawerPills: {
-    flexDirection: 'row'
-  },
+  drawerName: { fontSize: 15, fontWeight: '800', color: '#070B24' },
+  drawerEmail: { fontSize: 12, color: '#475569', marginTop: 2 },
+  drawerPills: { flexDirection: 'row' },
   drawerPillBtn: {
-    backgroundColor: '#F1F5F9',
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 12,
-    marginLeft: 8
+    marginLeft: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.9)'
   },
-  logoutPill: {
-    backgroundColor: '#FEF2F2'
-  },
-  drawerPillText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#070B24'
-  },
+  logoutPill: { backgroundColor: 'rgba(254, 242, 242, 0.85)' },
+  drawerPillText: { fontSize: 12, fontWeight: '700', color: '#070B24' },
+
+  // Glass Wallet Card Deck
   deckScrollContent: {
     paddingHorizontal: 10,
     paddingTop: 4,
     paddingBottom: 80
   },
-  walletCard: {
+  walletCardShadow: {
     borderRadius: 30,
-    paddingHorizontal: 22,
-    paddingTop: 20,
-    paddingBottom: 56,
-    shadowColor: '#000000',
+    shadowColor: '#070B24',
     shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
+    shadowOpacity: 0.14,
+    shadowRadius: 14,
     elevation: 6
+  },
+  walletCardClip: {
+    borderRadius: 30,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.64)'
+  },
+  walletCardInner: {
+    paddingHorizontal: 22,
+    paddingTop: 26,
+    paddingBottom: 56
   },
   cardTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 26
+    marginBottom: 22
   },
   glyphBadge: {
     minWidth: 34,
     height: 34,
     paddingHorizontal: 12,
     borderRadius: 17,
-    backgroundColor: 'rgba(7, 11, 36, 0.10)',
+    backgroundColor: 'rgba(255, 255, 255, 0.35)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
     alignItems: 'center',
     justifyContent: 'center'
   },
-  glyphText: {
-    fontSize: 10,
-    fontWeight: '900',
-    color: '#070B24',
-    letterSpacing: -0.3,
-    flexShrink: 0
-  },
-  anomalyDotBadge: {
-    backgroundColor: 'rgba(7, 11, 36, 0.85)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12
-  },
-  anomalyDotText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700'
-  },
+  glyphText: { fontSize: 10, fontWeight: '900', color: '#070B24' },
   cardMainRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -892,7 +987,7 @@ const styles = StyleSheet.create({
   cardCategorySub: {
     fontSize: 13,
     fontWeight: '600',
-    color: 'rgba(11, 19, 32, 0.55)',
+    color: 'rgba(11, 19, 32, 0.6)',
     marginBottom: 3
   },
   cardTitleText: {
@@ -902,7 +997,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5
   },
   cardRightMetric: {
-    fontSize: 21,
+    fontSize: 20,
     fontWeight: '600',
     color: '#0B1320',
     letterSpacing: -0.5,
@@ -911,116 +1006,41 @@ const styles = StyleSheet.create({
   expandedDrawer: {
     marginTop: 18,
     paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(7, 11, 36, 0.12)'
-  },
-  pickerLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: 'rgba(11, 19, 32, 0.7)',
-    marginBottom: 8
-  },
-  colorPickerScroll: {
-    paddingTop: 3,
-    paddingBottom: 12,
-    paddingHorizontal: 3
-  },
-  colorSwatch: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    marginRight: 10,
-    borderWidth: 3,
-    borderColor: 'transparent'
-  },
-  colorSwatchActive: {
-    borderColor: '#FFFFFF',
-    transform: [{ scale: 1.12 }],
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.35,
-    shadowRadius: 3,
-    elevation: 4
-  },
-  shadeBlock: {
-    marginBottom: 14
-  },
-  shadeLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    marginBottom: 6
-  },
-  shadeRow: {
-    flexDirection: 'row'
-  },
-  shadeSwatch: {
-    flex: 1,
-    height: 34,
-    borderRadius: 10,
-    marginRight: 6,
-    borderWidth: 3,
-    borderColor: 'transparent'
-  },
-  shadeSwatchActive: {
-    borderColor: '#FFFFFF',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.35,
-    shadowRadius: 3,
-    elevation: 4
+    borderTopWidth: 1
   },
   actionRowButtons: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 4
+    alignItems: 'center'
   },
   actionDarkPill: {
-    backgroundColor: '#070B24',
-    paddingVertical: 9,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    marginRight: 8
+  },
+  actionDarkPillText: { fontSize: 13, fontWeight: '700' },
+  actionLightPill: {
+    paddingVertical: 10,
     paddingHorizontal: 14,
     borderRadius: 14,
-    marginRight: 6
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.45)'
   },
-  actionDarkPillText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700'
-  },
-  actionLightPill: {
-    backgroundColor: 'rgba(255, 255, 255, 0.55)',
-    paddingVertical: 9,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    marginRight: 6
-  },
-  actionLightPillText: {
-    color: '#070B24',
-    fontSize: 13,
-    fontWeight: '700'
-  },
+  actionLightPillText: { fontSize: 13, fontWeight: '700' },
   actionDeletePill: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(255, 255, 255, 0.86)',
     borderWidth: 1.5,
     borderColor: '#B91C1C',
-    paddingVertical: 7.5,
+    paddingVertical: 8.5,
     paddingHorizontal: 12,
     borderRadius: 14,
     marginLeft: 'auto'
   },
-  actionDeleteText: {
-    color: '#B91C1C',
-    fontSize: 13,
-    fontWeight: '700'
-  },
-  analyticsCard: {
-    backgroundColor: '#D3C499',
-    paddingBottom: 26
-  },
-  healthLinkText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: 'rgba(7, 11, 36, 0.65)'
-  },
+  actionDeleteText: { color: '#B91C1C', fontSize: 13, fontWeight: '700' },
+
+  // Analytics Card Internals
+  healthLinkText: { fontSize: 12, fontWeight: '700', color: 'rgba(7, 11, 36, 0.7)' },
   chartRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1030,40 +1050,30 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     paddingHorizontal: 4
   },
-  barCol: {
-    alignItems: 'center'
-  },
-  barTrack: {
-    height: 90,
-    justifyContent: 'flex-end'
-  },
+  barCol: { alignItems: 'center' },
+  barTrack: { height: 90, justifyContent: 'flex-end' },
   barDayLabel: {
     fontSize: 11,
     fontWeight: '600',
-    color: 'rgba(7, 11, 36, 0.45)',
+    color: 'rgba(7, 11, 36, 0.5)',
     marginTop: 6
   },
-  barDayLabelActive: {
-    color: '#070B24',
-    fontWeight: '800'
-  },
+  barDayLabelActive: { color: '#070B24', fontWeight: '800' },
   analyticsFooterRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'baseline',
     marginTop: 6
   },
-  allTimeLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: 'rgba(7, 11, 36, 0.55)'
-  },
+  allTimeLabel: { fontSize: 14, fontWeight: '600', color: 'rgba(7, 11, 36, 0.6)' },
   allTimeValue: {
     fontSize: 28,
     fontWeight: '700',
     color: '#070B24',
     letterSpacing: -0.8
   },
+
+  // Modal Styles
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(7, 11, 36, 0.45)',
@@ -1082,29 +1092,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 4
   },
-  modalTitle: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: '#070B24'
-  },
-  closeBtnText: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#64748B',
-    padding: 4
-  },
+  modalTitle: { fontSize: 24, fontWeight: '900', color: '#070B24' },
+  closeBtnText: { fontSize: 20, fontWeight: '800', color: '#64748B', padding: 4 },
   modalSubtitle: {
     fontSize: 13,
     color: '#64748B',
     marginBottom: 18,
     fontWeight: '500'
   },
-  label: {
-    color: '#1E293B',
-    fontSize: 13,
-    marginBottom: 6,
-    fontWeight: '700'
-  },
+  label: { color: '#1E293B', fontSize: 13, marginBottom: 6, fontWeight: '700' },
   input: {
     backgroundColor: '#F8FAFC',
     color: '#0F172A',
@@ -1115,19 +1111,9 @@ const styles = StyleSheet.create({
     borderColor: '#CBD5E1',
     fontSize: 15
   },
-  inputFocused: {
-    borderColor: '#82B428',
-    backgroundColor: '#FFFFFF'
-  },
-  rowInputs: {
-    flexDirection: 'row',
-    justifyContent: 'space-between'
-  },
-  modalColorScroll: {
-    paddingTop: 4,
-    paddingBottom: 12,
-    paddingHorizontal: 4
-  },
+  inputFocused: { borderColor: '#82B428', backgroundColor: '#FFFFFF' },
+  rowInputs: { flexDirection: 'row', justifyContent: 'space-between' },
+  modalColorScroll: { paddingTop: 4, paddingBottom: 12, paddingHorizontal: 4 },
   modalSwatch: {
     width: 34,
     height: 34,
@@ -1145,6 +1131,25 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 6
   },
+  shadeBlock: { marginBottom: 14 },
+  shadeLabel: { fontSize: 11, fontWeight: '600', marginBottom: 6 },
+  shadeRow: { flexDirection: 'row' },
+  shadeSwatch: {
+    flex: 1,
+    height: 34,
+    borderRadius: 10,
+    marginRight: 6,
+    borderWidth: 3,
+    borderColor: 'transparent'
+  },
+  shadeSwatchActive: {
+    borderColor: '#FFFFFF',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.35,
+    shadowRadius: 3,
+    elevation: 4
+  },
   primaryBtn: {
     backgroundColor: '#070B24',
     paddingVertical: 16,
@@ -1152,9 +1157,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 6
   },
-  primaryBtnText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700'
-  }
+  primaryBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' }
 });
