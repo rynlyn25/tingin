@@ -11,36 +11,260 @@ import {
   ScrollView,
   Dimensions,
   Animated,
-  Image
+  Image,
+  Easing,
+  LayoutAnimation,
+  UIManager
 } from 'react-native';
-import Svg, { Path, Circle, Ellipse } from 'react-native-svg';
+import { BlurView } from 'expo-blur';
+import Svg, {
+  Path,
+  Circle,
+  Defs,
+  RadialGradient,
+  LinearGradient,
+  Stop,
+  Rect
+} from 'react-native-svg';
 import { Accelerometer } from 'expo-sensors';
 import { Asset } from 'expo-asset';
 
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
 const HEAD_IMG = require('../assets/meerkat-head.png');
+const { width, height } = Dimensions.get('window');
 
-const { width } = Dimensions.get('window');
+// Exact warm ivory sampled from meerkat.webp so the mascot blends seamlessly
+const CANVAS_BG = '#F7F1E5';
 
-// ---- Meerkat geometry ----
-// The head is cut out of the SAME artwork as the landing page (assets/meerkat-head.png,
-// 610 x 450). Pupils are animated on top of it, so the face is identical.
+const springLayout = () => {
+  LayoutAnimation.configureNext({
+    duration: 300,
+    create: {
+      type: LayoutAnimation.Types.spring,
+      property: LayoutAnimation.Properties.opacity,
+      springDamping: 0.8
+    },
+    update: {
+      type: LayoutAnimation.Types.spring,
+      springDamping: 0.8
+    },
+    delete: {
+      type: LayoutAnimation.Types.easeInEaseOut,
+      property: LayoutAnimation.Properties.opacity
+    }
+  });
+};
+
+// ---- Meerkat geometry (preserved from your exact artwork measurements) ----
 const HEAD_W = 200;
-const K = HEAD_W / 610;                      // image px -> screen px
+const K = HEAD_W / 610;
 const HEAD_H = 450 * K;
-const CARD_TOP = Math.round(420 * K);        // card's top edge (the neck hides behind it)
+const CARD_TOP = Math.round(420 * K);
 const PAW_W = 44;
 const PAW_H = 34;
-const PAW_REST_TOP = CARD_TOP - PAW_H * 0.65; // paws sit mostly ON the card's edge, not inside it
-const EYE_D = 98 * K + 1;                    // outer eye diameter (covers the painted eye)
-const EYE_L = { x: 187 * K, y: 234 * K };    // eye centres, measured from the artwork
+const PAW_REST_TOP = CARD_TOP - PAW_H * 0.65;
+const EYE_D = 98 * K + 1;
+const EYE_L = { x: 187 * K, y: 234 * K };
 const EYE_R = { x: 423.5 * K, y: 229.5 * K };
 const PUPIL_D = 55 * K;
-const REST_X = 48;                           // paw distance from centre when resting
-const EYE_OFFSET_X = HEAD_W / 2 - EYE_L.x;   // eye distance from centre
-const COVER_Y = PAW_REST_TOP + PAW_H / 2 - (EYE_L.y + EYE_R.y) / 2; // paws travel up to the eyes
-const COVER_X = REST_X - EYE_OFFSET_X;       // paws slide inward over the eyes
-const EYE_RANGE = 4.5;                       // max pupil travel
-const GAZE_CHARS = 26;                       // characters it takes to sweep left -> right
+const REST_X = 48;
+const EYE_OFFSET_X = HEAD_W / 2 - EYE_L.x;
+const COVER_Y = PAW_REST_TOP + PAW_H / 2 - (EYE_L.y + EYE_R.y) / 2;
+const COVER_X = REST_X - EYE_OFFSET_X;
+const EYE_RANGE = 4.5;
+const GAZE_CHARS = 26;
+
+// Subtle ambient aura confined to the upper glass zone so it fades cleanly into CANVAS_BG
+function AuthAmbientAura({ mode }) {
+  const driftA = useRef(new Animated.Value(0)).current;
+  const driftB = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loopA = Animated.loop(
+      Animated.sequence([
+        Animated.timing(driftA, {
+          toValue: 1,
+          duration: 5800,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true
+        }),
+        Animated.timing(driftA, {
+          toValue: 0,
+          duration: 5800,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true
+        })
+      ])
+    );
+
+    const loopB = Animated.loop(
+      Animated.sequence([
+        Animated.timing(driftB, {
+          toValue: 1,
+          duration: 7400,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true
+        }),
+        Animated.timing(driftB, {
+          toValue: 0,
+          duration: 7400,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true
+        })
+      ])
+    );
+
+    loopA.start();
+    loopB.start();
+    return () => {
+      loopA.stop();
+      loopB.stop();
+    };
+  }, []);
+
+  const shiftAY = driftA.interpolate({ inputRange: [0, 1], outputRange: [-10, 12] });
+  const shiftAX = driftA.interpolate({ inputRange: [0, 1], outputRange: [-8, 12] });
+  const shiftBX = driftB.interpolate({ inputRange: [0, 1], outputRange: [12, -12] });
+  const shiftBY = driftB.interpolate({ inputRange: [0, 1], outputRange: [8, -10] });
+
+  const isLanding = mode === 'LANDING';
+
+  return (
+    <View style={[StyleSheet.absoluteFill, { backgroundColor: CANVAS_BG }]} pointerEvents="none">
+      <Animated.View
+        style={[
+          StyleSheet.absoluteFill,
+          { transform: [{ translateX: shiftAX }, { translateY: shiftAY }] }
+        ]}
+      >
+        <Svg width={width} height={height}>
+          <Defs>
+            <RadialGradient id="authOrbLime" cx="16%" cy={isLanding ? '16%' : '20%'} r="42%">
+              <Stop offset="0%" stopColor="#98C93C" stopOpacity={isLanding ? '0.22' : '0.30'} />
+              <Stop offset="100%" stopColor={CANVAS_BG} stopOpacity="0" />
+            </RadialGradient>
+          </Defs>
+          <Circle
+            cx={width * 0.16}
+            cy={height * (isLanding ? 0.16 : 0.2)}
+            r={width * 0.65}
+            fill="url(#authOrbLime)"
+          />
+        </Svg>
+      </Animated.View>
+
+      <Animated.View
+        style={[
+          StyleSheet.absoluteFill,
+          { transform: [{ translateX: shiftBX }, { translateY: shiftBY }] }
+        ]}
+      >
+        <Svg width={width} height={height}>
+          <Defs>
+            <RadialGradient id="authOrbGold" cx="88%" cy={isLanding ? '32%' : '52%'} r="44%">
+              <Stop offset="0%" stopColor="#D3C499" stopOpacity={isLanding ? '0.36' : '0.46'} />
+              <Stop offset="100%" stopColor={CANVAS_BG} stopOpacity="0" />
+            </RadialGradient>
+            {!isLanding && (
+              <RadialGradient id="authOrbLower" cx="20%" cy="78%" r="48%">
+                <Stop offset="0%" stopColor="#98C93C" stopOpacity="0.22" />
+                <Stop offset="100%" stopColor={CANVAS_BG} stopOpacity="0" />
+              </RadialGradient>
+            )}
+          </Defs>
+          <Circle
+            cx={width * 0.88}
+            cy={height * (isLanding ? 0.32 : 0.52)}
+            r={width * 0.62}
+            fill="url(#authOrbGold)"
+          />
+          {!isLanding && (
+            <Circle
+              cx={width * 0.2}
+              cy={height * 0.78}
+              r={width * 0.68}
+              fill="url(#authOrbLower)"
+            />
+          )}
+        </Svg>
+      </Animated.View>
+    </View>
+  );
+}
+
+// Modern frosted-glass button with smooth diagonal sheen (no harsh horizontal split line)
+function SpringGlassButton({ variant = 'primary', onPress, children, style }) {
+  const pressScale = useRef(new Animated.Value(1)).current;
+  const isPrimary = variant === 'primary';
+
+  return (
+    <Animated.View style={[{ transform: [{ scale: pressScale }] }, style]}>
+      <TouchableOpacity
+        activeOpacity={0.92}
+        onPressIn={() =>
+          Animated.spring(pressScale, {
+            toValue: 0.965,
+            friction: 7,
+            useNativeDriver: true
+          }).start()
+        }
+        onPressOut={() =>
+          Animated.spring(pressScale, {
+            toValue: 1,
+            friction: 6,
+            useNativeDriver: true
+          }).start()
+        }
+        onPress={onPress}
+        style={isPrimary ? styles.primaryGlassBtn : styles.secondaryGlassBtn}
+      >
+        <BlurView
+          intensity={isPrimary ? 24 : 50}
+          tint={isPrimary ? 'dark' : 'light'}
+          style={StyleSheet.absoluteFill}
+        />
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              backgroundColor: isPrimary
+                ? 'rgba(7, 11, 36, 0.92)'
+                : 'rgba(255, 255, 255, 0.64)'
+            }
+          ]}
+        />
+        <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" pointerEvents="none">
+          <Defs>
+            <LinearGradient
+              id={isPrimary ? 'btnSheenDark' : 'btnSheenLight'}
+              x1="0%"
+              y1="0%"
+              x2="100%"
+              y2="100%"
+            >
+              <Stop
+                offset="0%"
+                stopColor="#FFFFFF"
+                stopOpacity={isPrimary ? '0.16' : '0.55'}
+              />
+              <Stop offset="55%" stopColor="#FFFFFF" stopOpacity="0.02" />
+              <Stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
+            </LinearGradient>
+          </Defs>
+          <Rect
+            width="100%"
+            height="100%"
+            fill={`url(#${isPrimary ? 'btnSheenDark' : 'btnSheenLight'})`}
+          />
+        </Svg>
+        {children}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
 
 // Paw drawn in the same tan / brown-fur palette as the artwork
 function PawArt({ flip }) {
@@ -77,7 +301,7 @@ function EyeIcon({ open, color = '#64748B', size = 24 }) {
     Animated.timing(anim, {
       toValue: open ? 1 : 0,
       duration: 180,
-      useNativeDriver: true,
+      useNativeDriver: true
     }).start();
   }, [open]);
 
@@ -93,7 +317,7 @@ function EyeIcon({ open, color = '#64748B', size = 24 }) {
     stroke: color,
     strokeWidth: 1.8,
     strokeLinecap: 'round',
-    strokeLinejoin: 'round',
+    strokeLinejoin: 'round'
   };
 
   return (
@@ -132,41 +356,96 @@ export default function LoginScreen({
   handleAuth
 }) {
   const [showForm, setShowForm] = useState(false);
-  const [focusedField, setFocusedField] = useState(null); // 'NAME' | 'ID' | 'EMAIL' | 'PASSWORD' | null
+  const [focusedField, setFocusedField] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
-  const [gaze, setGaze] = useState(0); // 0 (start of text) -> 1 (far end of text)
-  const [headReady, setHeadReady] = useState(false); // eyes/paws only show once the face has loaded
+  const [gaze, setGaze] = useState(0);
+  const [headReady, setHeadReady] = useState(false);
 
-  // Preload the face so it's already decoded when the form opens
   useEffect(() => {
     Asset.fromModule(HEAD_IMG).downloadAsync().catch(() => {});
   }, []);
 
-  // 1. Accelerometer animations for Step 1 Landing Screen
+  // 1. Accelerometer animations for Step 1 Landing Screen (clamped so image edge never exposes)
   const tiltX = useRef(new Animated.Value(0)).current;
   const tiltY = useRef(new Animated.Value(0)).current;
 
   // 2. Interactive form meerkat
   const eyeX = useRef(new Animated.Value(0)).current;
   const eyeY = useRef(new Animated.Value(0)).current;
-  const cover = useRef(new Animated.Value(0)).current; // 0 = paws resting, 1 = paws over eyes
+  const cover = useRef(new Animated.Value(0)).current;
   const blink = useRef(new Animated.Value(0)).current;
+
+  // 3. Staggered entrance animations
+  const landingHeroAnim = useRef(new Animated.Value(0)).current;
+  const landingDockAnim = useRef(new Animated.Value(0)).current;
+  const landingMascotAnim = useRef(new Animated.Value(0)).current;
+
+  const formHeaderAnim = useRef(new Animated.Value(0)).current;
+  const formStageAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!showForm) {
+      landingHeroAnim.setValue(0);
+      landingDockAnim.setValue(0);
+      landingMascotAnim.setValue(0);
+      Animated.stagger(85, [
+        Animated.spring(landingHeroAnim, {
+          toValue: 1,
+          friction: 7,
+          tension: 52,
+          useNativeDriver: true
+        }),
+        Animated.spring(landingDockAnim, {
+          toValue: 1,
+          friction: 7,
+          tension: 52,
+          useNativeDriver: true
+        }),
+        Animated.spring(landingMascotAnim, {
+          toValue: 1,
+          friction: 7,
+          tension: 48,
+          useNativeDriver: true
+        })
+      ]).start();
+    } else {
+      formHeaderAnim.setValue(0);
+      formStageAnim.setValue(0);
+      Animated.stagger(85, [
+        Animated.spring(formHeaderAnim, {
+          toValue: 1,
+          friction: 7,
+          tension: 55,
+          useNativeDriver: true
+        }),
+        Animated.spring(formStageAnim, {
+          toValue: 1,
+          friction: 7,
+          tension: 52,
+          useNativeDriver: true
+        })
+      ]).start();
+    }
+  }, [showForm]);
 
   useEffect(() => {
     Accelerometer.setUpdateInterval(40);
     const subscription = Accelerometer.addListener(({ x, y }) => {
+      const clampedX = Math.max(-28, Math.min(28, x * 32));
+      const clampedY = Math.max(-14, Math.min(16, (y + 0.5) * 18));
+
       Animated.spring(tiltX, {
-        toValue: x * 35,
+        toValue: clampedX,
         friction: 7,
         tension: 45,
-        useNativeDriver: true,
+        useNativeDriver: true
       }).start();
 
       Animated.spring(tiltY, {
-        toValue: (y + 0.5) * 20,
+        toValue: clampedY,
         friction: 7,
         tension: 45,
-        useNativeDriver: true,
+        useNativeDriver: true
       }).start();
     });
 
@@ -177,17 +456,15 @@ export default function LoginScreen({
 
   const pawsCovering = focusedField === 'PASSWORD' && !showPassword;
 
-  // Paws: cover the eyes while a hidden password is being typed
   useEffect(() => {
     Animated.spring(cover, {
       toValue: pawsCovering ? 1 : 0,
       friction: 6,
       tension: 70,
-      useNativeDriver: true,
+      useNativeDriver: true
     }).start();
   }, [pawsCovering]);
 
-  // Eyes: follow the text as it's typed (email, name, id, or a visible password)
   useEffect(() => {
     let x = 0;
     let y = 0;
@@ -197,11 +474,10 @@ export default function LoginScreen({
     }
     Animated.parallel([
       Animated.spring(eyeX, { toValue: x, friction: 7, tension: 90, useNativeDriver: true }),
-      Animated.spring(eyeY, { toValue: y, friction: 7, tension: 90, useNativeDriver: true }),
+      Animated.spring(eyeY, { toValue: y, friction: 7, tension: 90, useNativeDriver: true })
     ]).start();
   }, [focusedField, pawsCovering, gaze]);
 
-  // Idle blinking
   useEffect(() => {
     if (!showForm) return;
     let alive = true;
@@ -211,7 +487,7 @@ export default function LoginScreen({
         if (!alive) return;
         Animated.sequence([
           Animated.timing(blink, { toValue: 1, duration: 90, useNativeDriver: true }),
-          Animated.timing(blink, { toValue: 0, duration: 130, useNativeDriver: true }),
+          Animated.timing(blink, { toValue: 0, duration: 130, useNativeDriver: true })
         ]).start(() => alive && loop());
       }, 2200 + Math.random() * 2800);
     };
@@ -234,14 +510,14 @@ export default function LoginScreen({
       setter(t);
       trackGaze(t.length);
     },
-    onSelectionChange: (e) => trackGaze(e.nativeEvent.selection.end),
+    onSelectionChange: (e) => trackGaze(e.nativeEvent.selection.end)
   });
 
   // Derived animated values
   const headRotate = tiltX.interpolate({
-    inputRange: [-45, 45],
-    outputRange: ['-10deg', '10deg'],
-    extrapolate: 'clamp',
+    inputRange: [-32, 32],
+    outputRange: ['-8deg', '8deg'],
+    extrapolate: 'clamp'
   });
   const leanShift = eyeX.interpolate({ inputRange: [-EYE_RANGE, EYE_RANGE], outputRange: [-4, 4], extrapolate: 'clamp' });
   const leanRotate = eyeX.interpolate({ inputRange: [-EYE_RANGE, EYE_RANGE], outputRange: ['-3deg', '3deg'], extrapolate: 'clamp' });
@@ -260,6 +536,11 @@ export default function LoginScreen({
   const openLogIn = () => {
     setIsSignUp(false);
     setShowForm(true);
+  };
+
+  const toggleAuthMode = () => {
+    springLayout();
+    setIsSignUp(!isSignUp);
   };
 
   const renderEye = () => (
@@ -283,89 +564,211 @@ export default function LoginScreen({
         transform: [
           { translateY: pawY },
           { translateX: side === 'left' ? leftPawX : rightPawX },
-          { rotate: side === 'left' ? leftPawRot : rightPawRot },
-        ],
+          { rotate: side === 'left' ? leftPawRot : rightPawRot }
+        ]
       }}
     >
       <PawArt flip={side === 'right'} />
     </Animated.View>
   );
 
-  // STEP 1: WELCOME LANDING VIEW
+// STEP 1: SEAMLESS GLASSMORPHIC HOMEPAGE
   if (!showForm) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.landingWrapper}>
+      <View style={styles.container}>
+        <AuthAmbientAura mode="LANDING" />
+
+        {/* SafeAreaView only wraps the top content so the mascot reaches the true bottom edge */}
+        <SafeAreaView style={styles.safeTopArea}>
           <View style={styles.topContent}>
-            <Text style={styles.brandTitle}>
-              Let's track{'\n'}some classes!
-            </Text>
-            <Text style={styles.brandSubtitle}>
-              Autonomous Vision-Based Attendance.{'\n'}
-              Welcome to Tingin.
-            </Text>
+            <Animated.View
+              style={{
+                opacity: landingHeroAnim,
+                transform: [
+                  {
+                    translateY: landingHeroAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [20, 0]
+                    })
+                  }
+                ]
+              }}
+            >
+              <Text style={styles.brandTitle}>
+                Let's track{'\n'}some classes!
+              </Text>
+              <Text style={styles.brandSubtitle}>
+                Autonomous YOLO vision attendance for De La Salle Araneta University.
+              </Text>
+            </Animated.View>
 
-            <TouchableOpacity style={styles.primaryBtn} onPress={openSignUp}>
-              <Text style={styles.primaryBtnText}>Sign Up</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.secondaryBtn} onPress={openLogIn}>
-              <Text style={styles.secondaryBtnText}>Log In</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.mascotContainer} pointerEvents="none">
-            <Animated.Image
-              source={require('../assets/meerkat.webp')}
+            <Animated.View
               style={[
-                styles.mascotImage,
+                styles.landingGlassDockShadow,
                 {
+                  opacity: landingDockAnim,
                   transform: [
-                    { translateX: tiltX },
-                    { translateY: tiltY },
-                    { rotate: headRotate },
-                  ],
-                },
+                    {
+                      translateY: landingDockAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [24, 0]
+                      })
+                    }
+                  ]
+                }
               ]}
-            />
+            >
+              <View style={styles.landingGlassDockClip}>
+                <BlurView intensity={60} tint="light" style={StyleSheet.absoluteFill} />
+                <View style={styles.glassSurfaceTint} />
+                <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" pointerEvents="none">
+                  <Defs>
+                    <LinearGradient id="dockSheen" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <Stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.58" />
+                      <Stop offset="45%" stopColor="#FFFFFF" stopOpacity="0.14" />
+                      <Stop offset="100%" stopColor="#FFFFFF" stopOpacity="0.02" />
+                    </LinearGradient>
+                  </Defs>
+                  <Rect width="100%" height="100%" fill="url(#dockSheen)" />
+                </Svg>
+
+                <View style={styles.landingGlassDockInner}>
+                  <SpringGlassButton variant="primary" onPress={openSignUp}>
+                    <Text style={styles.primaryBtnText}>Create Faculty Account</Text>
+                  </SpringGlassButton>
+
+                  <SpringGlassButton
+                    variant="secondary"
+                    onPress={openLogIn}
+                    style={{ marginTop: 10 }}
+                  >
+                    <Text style={styles.secondaryBtnText}>Log In</Text>
+                  </SpringGlassButton>
+                </View>
+              </View>
+            </Animated.View>
           </View>
-        </View>
-      </SafeAreaView>
+        </SafeAreaView>
+
+        {/* Full-bleed Mascot Stage anchored directly to the bottom edge */}
+        <Animated.View
+          style={[
+            styles.mascotContainer,
+            {
+              opacity: landingMascotAnim,
+              transform: [
+                {
+                  translateY: landingMascotAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [30, 0]
+                  })
+                }
+              ]
+            }
+          ]}
+          pointerEvents="none"
+        >
+          <Animated.Image
+            source={require('../assets/meerkat.webp')}
+            style={[
+              styles.mascotImage,
+              {
+                transform: [
+                  { translateX: tiltX },
+                  { translateY: tiltY },
+                  { rotate: headRotate }
+                ]
+              }
+            ]}
+          />
+
+          <View style={styles.mascotTopFeather} pointerEvents="none">
+            <Svg width="100%" height="100%">
+              <Defs>
+                <LinearGradient id="mascotFeather" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <Stop offset="0%" stopColor={CANVAS_BG} stopOpacity="1" />
+                  <Stop offset="35%" stopColor={CANVAS_BG} stopOpacity="0.72" />
+                  <Stop offset="100%" stopColor={CANVAS_BG} stopOpacity="0" />
+                </LinearGradient>
+              </Defs>
+              <Rect width="100%" height="100%" fill="url(#mascotFeather)" />
+            </Svg>
+          </View>
+        </Animated.View>
+      </View>
     );
   }
 
-  // STEP 2: INTERACTIVE MEERKAT PEEKING OVER THE FORM CARD
+  // STEP 2: GLASSMORPHIC LOGIN & SIGN UP FORM WITH INTERACTIVE MEERKAT
   return (
     <SafeAreaView style={styles.container}>
+      <AuthAmbientAura mode="FORM" />
+
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
       >
-        <ScrollView contentContainerStyle={styles.scrollContainer} bounces={false} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={styles.scrollContainer}
+          bounces={false}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={styles.formBox}>
-            <TouchableOpacity
-              style={styles.backBtn}
-              onPress={() => {
-                setFocusedField(null);
-                setShowForm(false);
+            <Animated.View
+              style={{
+                opacity: formHeaderAnim,
+                transform: [
+                  {
+                    translateY: formHeaderAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [18, 0]
+                    })
+                  }
+                ]
               }}
             >
-              <Text style={styles.backBtnText}>← Back</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.backGlassBtn}
+                activeOpacity={0.8}
+                onPress={() => {
+                  setFocusedField(null);
+                  setShowForm(false);
+                }}
+              >
+                <BlurView intensity={48} tint="light" style={StyleSheet.absoluteFill} />
+                <View style={styles.backGlassTint} />
+                <Text style={styles.backBtnText}>← Back</Text>
+              </TouchableOpacity>
 
-            <Text style={styles.formTitle}>
-              {isSignUp ? 'Create Faculty Account' : 'Welcome Back!'}
-            </Text>
-            <Text style={styles.formSubtitle}>
-              DLSAU Faculty-Exclusive Portal (@dlsau.edu.ph)
-            </Text>
+              <Text style={styles.formTitle}>
+                {isSignUp ? 'Create Faculty Account' : 'Welcome Back!'}
+              </Text>
+              <Text style={styles.formSubtitle}>
+                DLSAU Faculty-Exclusive Portal (@dlsau.edu.ph)
+              </Text>
+            </Animated.View>
 
-            <View style={styles.peekWrap}>
-              {/* LAYER 1: head, tucked behind the card */}
+            <Animated.View
+              style={[
+                styles.peekWrap,
+                {
+                  opacity: formStageAnim,
+                  transform: [
+                    {
+                      translateY: formStageAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [28, 0]
+                      })
+                    }
+                  ]
+                }
+              ]}
+            >
+              {/* LAYER 1: head, tucked behind the glass card */}
               <Animated.View
                 style={[
                   styles.headLayer,
-                  { transform: [{ translateX: leanShift }, { rotate: leanRotate }] },
+                  { transform: [{ translateX: leanShift }, { rotate: leanRotate }] }
                 ]}
                 pointerEvents="none"
               >
@@ -392,75 +795,96 @@ export default function LoginScreen({
                 </View>
               </Animated.View>
 
-              {/* LAYER 2: the credentials card */}
-              <View style={styles.credentialsCard}>
-                {isSignUp && (
-                  <>
-                    <Text style={styles.label}>Full Name</Text>
-                    <TextInput
-                      style={[styles.input, focusedField === 'NAME' && styles.inputFocused]}
-                      placeholder="Prof. Juan Dela Cruz"
-                      placeholderTextColor="#94A3B8"
-                      value={fullName}
-                      {...fieldProps('NAME', fullName, setFullName)}
-                    />
-                    <Text style={styles.label}>DLSAU Employee ID</Text>
-                    <TextInput
-                      style={[styles.input, focusedField === 'ID' && styles.inputFocused]}
-                      placeholder="FAC-2026-001"
-                      placeholderTextColor="#94A3B8"
-                      value={facultyId}
-                      {...fieldProps('ID', facultyId, setFacultyId)}
-                    />
-                  </>
-                )}
+              {/* LAYER 2: frosted glass credentials card */}
+              <View style={styles.credentialsCardShadow}>
+                <View style={styles.credentialsCardGlass}>
+                  <BlurView intensity={70} tint="light" style={StyleSheet.absoluteFill} />
+                  <View style={styles.credentialsGlassTint} />
+                  <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" pointerEvents="none">
+                    <Defs>
+                      <LinearGradient id="formCardSheen" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <Stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.58" />
+                        <Stop offset="45%" stopColor="#FFFFFF" stopOpacity="0.14" />
+                        <Stop offset="100%" stopColor="#FFFFFF" stopOpacity="0.02" />
+                      </LinearGradient>
+                    </Defs>
+                    <Rect width="100%" height="100%" fill="url(#formCardSheen)" />
+                  </Svg>
 
-                <Text style={styles.label}>Institutional Email</Text>
-                <TextInput
-                  style={[styles.input, focusedField === 'EMAIL' && styles.inputFocused]}
-                  placeholder="juan.delacruz@dlsau.edu.ph"
-                  placeholderTextColor="#94A3B8"
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  value={email}
-                  {...fieldProps('EMAIL', email, setEmail)}
-                />
+                  <View style={styles.credentialsCardInner}>
+                    {isSignUp && (
+                      <>
+                        <Text style={styles.label}>Full Name</Text>
+                        <TextInput
+                          style={[styles.input, focusedField === 'NAME' && styles.inputFocused]}
+                          placeholder="Prof. Juan Dela Cruz"
+                          placeholderTextColor="#64748B"
+                          value={fullName}
+                          {...fieldProps('NAME', fullName, setFullName)}
+                        />
+                        <Text style={styles.label}>DLSAU Employee ID</Text>
+                        <TextInput
+                          style={[styles.input, focusedField === 'ID' && styles.inputFocused]}
+                          placeholder="FAC-2026-001"
+                          placeholderTextColor="#64748B"
+                          value={facultyId}
+                          {...fieldProps('ID', facultyId, setFacultyId)}
+                        />
+                      </>
+                    )}
 
-                <Text style={styles.label}>Password</Text>
-                <View
-                  style={[
-                    styles.passwordContainer,
-                    focusedField === 'PASSWORD' && styles.inputFocused
-                  ]}
-                >
-                  <TextInput
-                    style={styles.passwordInput}
-                    placeholder="Enter password"
-                    placeholderTextColor="#94A3B8"
-                    secureTextEntry={!showPassword}
-                    autoCapitalize="none"
-                    value={password}
-                    {...fieldProps('PASSWORD', password, setPassword)}
-                  />
-                  <TouchableOpacity
-                    style={styles.eyeToggleBtn}
-                    onPress={() => setShowPassword(!showPassword)}
-                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                    accessibilityRole="button"
-                    accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
-                  >
-                    <EyeIcon open={showPassword} color={showPassword ? '#070B24' : '#64748B'} />
-                  </TouchableOpacity>
+                    <Text style={styles.label}>Institutional Email</Text>
+                    <TextInput
+                      style={[styles.input, focusedField === 'EMAIL' && styles.inputFocused]}
+                      placeholder="juan.delacruz@dlsau.edu.ph"
+                      placeholderTextColor="#64748B"
+                      autoCapitalize="none"
+                      keyboardType="email-address"
+                      value={email}
+                      {...fieldProps('EMAIL', email, setEmail)}
+                    />
+
+                    <Text style={styles.label}>Password</Text>
+                    <View
+                      style={[
+                        styles.passwordContainer,
+                        focusedField === 'PASSWORD' && styles.inputFocused
+                      ]}
+                    >
+                      <TextInput
+                        style={styles.passwordInput}
+                        placeholder="Enter password"
+                        placeholderTextColor="#64748B"
+                        secureTextEntry={!showPassword}
+                        autoCapitalize="none"
+                        value={password}
+                        {...fieldProps('PASSWORD', password, setPassword)}
+                      />
+                      <TouchableOpacity
+                        style={styles.eyeToggleBtn}
+                        onPress={() => setShowPassword(!showPassword)}
+                        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                        accessibilityRole="button"
+                        accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                      >
+                        <EyeIcon open={showPassword} color={showPassword ? '#070B24' : '#475569'} />
+                      </TouchableOpacity>
+                    </View>
+
+                    <SpringGlassButton
+                      variant="primary"
+                      onPress={handleAuth}
+                      style={{ marginTop: 4 }}
+                    >
+                      <Text style={styles.primaryBtnText}>
+                        {isSignUp ? 'Complete Sign Up' : 'Log In to Dashboard'}
+                      </Text>
+                    </SpringGlassButton>
+                  </View>
                 </View>
-
-                <TouchableOpacity style={styles.primaryBtn} onPress={handleAuth}>
-                  <Text style={styles.primaryBtnText}>
-                    {isSignUp ? 'Complete Sign Up' : 'Log In to Dashboard'}
-                  </Text>
-                </TouchableOpacity>
               </View>
 
-              {/* LAYER 3: paws, in front of the card edge */}
+              {/* LAYER 3: paws, in front of the glass card edge */}
               {headReady && (
                 <View style={styles.pawsLayer} pointerEvents="none">
                   <View style={styles.pawsRow}>
@@ -469,11 +893,12 @@ export default function LoginScreen({
                   </View>
                 </View>
               )}
-            </View>
+            </Animated.View>
 
             <TouchableOpacity
-              style={styles.switchBtn}
-              onPress={() => setIsSignUp(!isSignUp)}
+              style={styles.switchGlassBtn}
+              activeOpacity={0.8}
+              onPress={toggleAuthMode}
             >
               <Text style={styles.switchBtnText}>
                 {isSignUp
@@ -491,89 +916,175 @@ export default function LoginScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F3EB'
+    backgroundColor: CANVAS_BG
   },
   landingWrapper: {
     flex: 1,
     justifyContent: 'space-between'
   },
-  topContent: {
-    paddingHorizontal: 32,
-    paddingTop: 48,
+
+  // Pushed down comfortably to remove dead gap above the mascot
+  safeTopArea: {
     zIndex: 10
   },
+  topContent: {
+    paddingHorizontal: 26,
+    paddingTop: Math.max(64, height * 0.088),
+    zIndex: 10
+  },
+
+  // Frosted Brand Eyebrow Pill
+  brandGlassPillWrap: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.85)',
+    marginBottom: 16
+  },
+  brandGlassPillTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255, 255, 255, 0.52)'
+  },
+  brandDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#76A622',
+    marginRight: 7
+  },
+  brandGlassPillText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#070B24',
+    letterSpacing: 0.75
+  },
+
   brandTitle: {
-    fontSize: 42,
+    fontSize: 38,
     fontWeight: '900',
     color: '#070B24',
-    lineHeight: 48,
-    marginBottom: 14,
-    letterSpacing: -0.5
+    lineHeight: 43,
+    marginBottom: 10,
+    letterSpacing: -1.1
   },
   brandSubtitle: {
-    fontSize: 17,
-    color: '#475569',
-    lineHeight: 24,
-    marginBottom: 36,
-    fontWeight: '400'
+    fontSize: 15,
+    color: '#525866',
+    lineHeight: 22,
+    marginBottom: 26,
+    fontWeight: '500',
+    maxWidth: '92%'
   },
-  primaryBtn: {
-    backgroundColor: '#070B24',
-    paddingVertical: 18,
+
+  // Concentric Frosted Glass Action Dock (outer: 26, pad: 10, inner buttons: 16)
+  landingGlassDockShadow: {
+    borderRadius: 26,
+    shadowColor: '#070B24',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.08,
+    shadowRadius: 22,
+    elevation: 5
+  },
+  landingGlassDockClip: {
+    borderRadius: 26,
+    overflow: 'hidden',
+    borderWidth: 1.25,
+    borderColor: 'rgba(255, 255, 255, 0.88)'
+  },
+  glassSurfaceTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255, 255, 255, 0.44)'
+  },
+  landingGlassDockInner: {
+    padding: 10
+  },
+
+  // Refined Modern Glass Buttons
+  primaryGlassBtn: {
+    paddingVertical: 16,
     borderRadius: 16,
     alignItems: 'center',
-    marginTop: 6
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)'
+  },
+  secondaryGlassBtn: {
+    paddingVertical: 15,
+    borderRadius: 16,
+    alignItems: 'center',
+    overflow: 'hidden',
+    borderWidth: 1.4,
+    borderColor: 'rgba(7, 11, 36, 0.14)'
   },
   primaryBtnText: {
     color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '700'
-  },
-  secondaryBtn: {
-    backgroundColor: 'transparent',
-    paddingVertical: 16,
-    borderRadius: 16,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#98C93C',
-    marginTop: 14
+    fontWeight: '700',
+    letterSpacing: -0.2
   },
   secondaryBtnText: {
-    color: '#82B428',
-    fontSize: 17,
-    fontWeight: '700'
+    color: '#070B24',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: -0.2
   },
-  mascotContainer: {
-    height: width * 0.82,
-    width: '100%',
+
+  // Seamless Clipped Mascot Stage + Top Feather Scrim
+ mascotContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: width * 0.88,
     alignItems: 'center',
     justifyContent: 'flex-start',
-    overflow: 'visible'
+    overflow: 'hidden'
   },
   mascotImage: {
     width: width * 1.4,
     height: width * 1.4,
     resizeMode: 'cover',
-    marginTop: -(width * 0.20)
+    marginTop: -(width * 0.18)
+  },
+  mascotTopFeather: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 68,
+    zIndex: 5
   },
 
-  // STEP 2: FORM & INTERACTIVE MEERKAT STYLES
+  // STEP 2: FORM & GLASS MEERKAT STYLES
   scrollContainer: {
     flexGrow: 1
   },
   formBox: {
-    paddingHorizontal: 26,
-    paddingTop: 16,
+    paddingHorizontal: 24,
+    paddingTop: 18,
     paddingBottom: 36
   },
-  backBtn: {
+  backGlassBtn: {
     alignSelf: 'flex-start',
-    marginBottom: 10,
-    paddingVertical: 4,
-    paddingRight: 12
+    marginBottom: 14,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 1.2,
+    borderColor: 'rgba(255, 255, 255, 0.85)'
+  },
+  backGlassTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255, 255, 255, 0.52)'
   },
   backBtnText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: '#070B24'
   },
@@ -581,16 +1092,16 @@ const styles = StyleSheet.create({
     fontSize: 30,
     fontWeight: '900',
     color: '#070B24',
-    marginBottom: 4
+    marginBottom: 4,
+    letterSpacing: -0.7
   },
   formSubtitle: {
     fontSize: 13,
-    color: '#64748B',
+    color: '#525866',
     marginBottom: 10,
-    fontWeight: '500'
+    fontWeight: '600'
   },
 
-  // Meerkat peeking over the card (3 stacked layers: head < card < paws)
   peekWrap: {
     position: 'relative'
   },
@@ -671,21 +1182,29 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between'
   },
 
-  // White Box Card Holding Email & Password
-  credentialsCard: {
+  credentialsCardShadow: {
     marginTop: CARD_TOP,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 22,
-    paddingTop: 28,
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
+    borderRadius: 26,
     shadowColor: '#070B24',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
     elevation: 5,
     zIndex: 2
+  },
+  credentialsCardGlass: {
+    borderRadius: 26,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.88)'
+  },
+  credentialsGlassTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255, 255, 255, 0.58)'
+  },
+  credentialsCardInner: {
+    padding: 20,
+    paddingTop: 26
   },
   label: {
     color: '#1E293B',
@@ -694,27 +1213,27 @@ const styles = StyleSheet.create({
     fontWeight: '700'
   },
   input: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: 'rgba(255, 255, 255, 0.66)',
     color: '#0F172A',
     padding: 15,
     borderRadius: 14,
-    marginBottom: 16,
-    borderWidth: 1.5,
-    borderColor: '#CBD5E1',
+    marginBottom: 15,
+    borderWidth: 1.25,
+    borderColor: 'rgba(255, 255, 255, 0.92)',
     fontSize: 15
   },
   inputFocused: {
-    borderColor: '#82B428',
-    backgroundColor: '#FFFFFF'
+    borderColor: '#76A622',
+    backgroundColor: 'rgba(255, 255, 255, 0.92)'
   },
   passwordContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: 'rgba(255, 255, 255, 0.66)',
     borderRadius: 14,
     marginBottom: 18,
-    borderWidth: 1.5,
-    borderColor: '#CBD5E1',
+    borderWidth: 1.25,
+    borderColor: 'rgba(255, 255, 255, 0.92)',
     paddingRight: 12
   },
   passwordInput: {
@@ -726,13 +1245,19 @@ const styles = StyleSheet.create({
   eyeToggleBtn: {
     padding: 2
   },
-  switchBtn: {
+  switchGlassBtn: {
     marginTop: 18,
-    alignItems: 'center'
+    alignSelf: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255, 255, 255, 0.56)',
+    borderWidth: 1.2,
+    borderColor: 'rgba(255, 255, 255, 0.88)'
   },
   switchBtnText: {
-    color: '#65A30D',
-    fontSize: 15,
-    fontWeight: '700'
+    color: '#5C8A12',
+    fontSize: 14,
+    fontWeight: '800'
   }
 });

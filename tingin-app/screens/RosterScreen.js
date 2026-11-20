@@ -34,7 +34,20 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
+// =============================================================================
+// 1. CONSTANTS & DATA
+// =============================================================================
+
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+
+const THEME = {
+  bg: '#F8F9FA',
+  navy: '#070B24',
+  ink: '#0B1320',
+  muted: '#64748B',
+  danger: '#DC2626',
+  defaultCardColor: '#01A638'
+};
 
 const COLOR_PRESETS = [
   { name: 'Red', hex: '#ED0A3F' },
@@ -45,77 +58,30 @@ const COLOR_PRESETS = [
   { name: 'Violet', hex: '#8359A3' },
   { name: 'Brown', hex: '#AF593E' }
 ];
-const DEFAULT_COLOR = '#01A638';
 
-const springLayout = () => {
-  LayoutAnimation.configureNext({
-    duration: 320,
-    create: {
-      type: LayoutAnimation.Types.spring,
-      property: LayoutAnimation.Properties.opacity,
-      springDamping: 0.8
-    },
-    update: {
-      type: LayoutAnimation.Types.spring,
-      springDamping: 0.8
-    },
-    delete: {
-      type: LayoutAnimation.Types.easeInEaseOut,
-      property: LayoutAnimation.Properties.opacity
-    }
-  });
+const STATUS_BADGES = {
+  PRESENT: { glassTint: 'rgba(22, 163, 74, 0.24)', text: '#14532D', label: 'Present' },
+  LATE: { glassTint: 'rgba(217, 119, 6, 0.24)', text: '#78350F', label: 'Late' },
+  ANOMALY: { glassTint: 'rgba(220, 38, 38, 0.24)', text: '#991B1B', label: 'Anomaly' },
+  ABSENT: { glassTint: 'rgba(100, 116, 139, 0.22)', text: '#334155', label: 'Absent' }
 };
 
-// ---- Color Helpers ----
-const hexToRgb = (hex) => {
-  const h = (hex || DEFAULT_COLOR).replace('#', '');
-  return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
-};
-
-const hexToRgba = (hex, alpha) => {
-  const [r, g, b] = hexToRgb(hex);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-};
-
-const rgbToHex = (rgb) =>
-  '#' +
-  rgb
-    .map((v) => Math.round(v).toString(16).padStart(2, '0'))
-    .join('')
-    .toUpperCase();
-
-const mixColor = (hex, target, amount) => {
-  const a = hexToRgb(hex);
-  const b = hexToRgb(target);
-  return rgbToHex(a.map((v, i) => v + (b[i] - v) * amount));
-};
-
-const getShades = (base) => [
-  mixColor(base, '#FFFFFF', 0.7),
-  mixColor(base, '#FFFFFF', 0.5),
-  mixColor(base, '#FFFFFF', 0.25),
-  mixColor(base, '#FFFFFF', 0),
-  mixColor(base, '#000000', 0.2),
-  mixColor(base, '#000000', 0.4),
-  mixColor(base, '#000000', 0.55)
+const SWIPE_ACTIONS = [
+  { status: 'PRESENT', label: 'Present', tintRgba: 'rgba(22, 163, 74, 0.58)', glow: '#16A34A', midX: -110, minScale: 0.72 },
+  { status: 'LATE', label: 'Late', tintRgba: 'rgba(217, 119, 6, 0.58)', glow: '#D97706', midX: -80, minScale: 0.68 },
+  { status: 'ABSENT', label: 'Absent', tintRgba: 'rgba(71, 85, 105, 0.56)', glow: '#475569', midX: -50, minScale: 0.64 }
 ];
 
-const luminance = (hex) => {
-  const [r, g, b] = hexToRgb(hex).map((v) => {
-    const c = v / 255;
-    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-  });
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-};
+const SWIPE_ACTION_WIDTH = 228;
+const MINI_WEEK_BARS = [0.85, 0.55, 0.4, 0.72, 0.95, 0.45, 0.8];
 
-const getCardTheme = (bg) => {
-  const L = luminance(bg);
-  const useWhite = 1.05 / (L + 0.05) > (L + 0.05) / 0.056;
-  const rgb = useWhite ? '255, 255, 255' : '7, 11, 36';
-  return {
-    ink: useWhite ? '#FFFFFF' : '#0B1320',
-    inkSoft: `rgba(${rgb}, 0.8)`
-  };
+const INITIAL_ENROLL_FORM = {
+  name: '',
+  studentId: '',
+  seat: '',
+  photoUri: null,
+  captureSource: '',
+  dpaAccepted: false
 };
 
 const INITIAL_STUDENTS = {
@@ -188,50 +154,121 @@ const INITIAL_STUDENTS = {
   ]
 };
 
-const MINI_WEEK_BARS = [0.85, 0.55, 0.4, 0.72, 0.95, 0.45, 0.8];
+// =============================================================================
+// 2. UTILITIES (ANIMATION & COLOR MATH)
+// =============================================================================
 
-// Living, gently drifting card-color aura backdrop
+const springLayout = () => {
+  LayoutAnimation.configureNext({
+    duration: 320,
+    create: {
+      type: LayoutAnimation.Types.spring,
+      property: LayoutAnimation.Properties.opacity,
+      springDamping: 0.8
+    },
+    update: {
+      type: LayoutAnimation.Types.spring,
+      springDamping: 0.8
+    },
+    delete: {
+      type: LayoutAnimation.Types.easeInEaseOut,
+      property: LayoutAnimation.Properties.opacity
+    }
+  });
+};
+
+const hexToRgb = (hex) => {
+  const clean = (hex || THEME.defaultCardColor).replace('#', '');
+  return [0, 2, 4].map((i) => parseInt(clean.slice(i, i + 2), 16) || 0);
+};
+
+const hexToRgba = (hex, alpha) => {
+  const [r, g, b] = hexToRgb(hex);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
+const rgbToHex = (rgb) =>
+  '#' +
+  rgb
+    .map((v) => Math.round(v).toString(16).padStart(2, '0'))
+    .join('')
+    .toUpperCase();
+
+const mixColor = (hex, target, amount) => {
+  const a = hexToRgb(hex);
+  const b = hexToRgb(target);
+  return rgbToHex(a.map((v, i) => v + (b[i] - v) * amount));
+};
+
+const getShades = (base) => [
+  mixColor(base, '#FFFFFF', 0.7),
+  mixColor(base, '#FFFFFF', 0.5),
+  mixColor(base, '#FFFFFF', 0.25),
+  mixColor(base, '#FFFFFF', 0),
+  mixColor(base, '#000000', 0.2),
+  mixColor(base, '#000000', 0.4),
+  mixColor(base, '#000000', 0.55)
+];
+
+const getLuminance = (hex) => {
+  const [r, g, b] = hexToRgb(hex).map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+
+const getCardTheme = (bg) => {
+  const L = getLuminance(bg);
+  const useWhite = 1.05 / (L + 0.05) > (L + 0.05) / 0.056;
+  const rgb = useWhite ? '255, 255, 255' : '7, 11, 36';
+  return {
+    ink: useWhite ? '#FFFFFF' : THEME.ink,
+    inkSoft: `rgba(${rgb}, 0.8)`
+  };
+};
+
+const getInitials = (name) =>
+  name
+    .split(/[\s,]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase();
+
+// =============================================================================
+// 3. SUB-COMPONENTS
+// =============================================================================
+
 function CardAuraBackground({ color }) {
   const driftA = useRef(new Animated.Value(0)).current;
   const driftB = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    const loopA = Animated.loop(
-      Animated.sequence([
-        Animated.timing(driftA, {
-          toValue: 1,
-          duration: 5200,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true
-        }),
-        Animated.timing(driftA, {
-          toValue: 0,
-          duration: 5200,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true
-        })
-      ])
-    );
+    const makeDriftLoop = (anim, duration) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(anim, {
+            toValue: 1,
+            duration,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true
+          }),
+          Animated.timing(anim, {
+            toValue: 0,
+            duration,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true
+          })
+        ])
+      );
 
-    const loopB = Animated.loop(
-      Animated.sequence([
-        Animated.timing(driftB, {
-          toValue: 1,
-          duration: 6800,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true
-        }),
-        Animated.timing(driftB, {
-          toValue: 0,
-          duration: 6800,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true
-        })
-      ])
-    );
-
+    const loopA = makeDriftLoop(driftA, 5200);
+    const loopB = makeDriftLoop(driftB, 6800);
     loopA.start();
     loopB.start();
+
     return () => {
       loopA.stop();
       loopB.stop();
@@ -292,7 +329,6 @@ function CardAuraBackground({ color }) {
   );
 }
 
-// Reusable frosted glass panel with crisp specular rim
 function GlassPanel({ style, intensity = 58, children }) {
   return (
     <View style={[styles.glassShadowWrap, style]}>
@@ -305,9 +341,293 @@ function GlassPanel({ style, intensity = 58, children }) {
   );
 }
 
-// Floating Glassmorphic Swipe Action Capsule (Present / Late / Absent)
+function HeroClassCard({
+  course,
+  studentCount,
+  cardColor,
+  enterAnim,
+  scrollY,
+  onPress
+}) {
+  const pressScale = useRef(new Animated.Value(1)).current;
+  const cardTheme = getCardTheme(cardColor);
+  const accentDark = mixColor(cardColor, '#000000', 0.35);
+
+  const parallaxY = scrollY.interpolate({
+    inputRange: [-120, 0, 220],
+    outputRange: [-18, 0, 28],
+    extrapolate: 'clamp'
+  });
+  const scrollScale = scrollY.interpolate({
+    inputRange: [-120, 0, 220],
+    outputRange: [1.03, 1, 0.94],
+    extrapolate: 'clamp'
+  });
+  const enterY = enterAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [24, 0]
+  });
+
+  const displayCount = course?.enrolled_count ?? studentCount;
+
+  const animatePress = (toValue) =>
+    Animated.spring(pressScale, {
+      toValue,
+      friction: toValue < 1 ? 7 : 6,
+      useNativeDriver: true
+    }).start();
+
+  return (
+    <Animated.View
+      style={{
+        opacity: enterAnim,
+        transform: [
+          { translateY: Animated.add(enterY, parallaxY) },
+          { scale: Animated.multiply(scrollScale, pressScale) }
+        ]
+      }}
+    >
+      <TouchableOpacity
+        activeOpacity={0.96}
+        onPressIn={() => animatePress(0.975)}
+        onPressOut={() => animatePress(1)}
+        onPress={onPress}
+        style={[styles.heroCardShadow, { shadowColor: cardColor }]}
+      >
+        <View style={styles.heroCardClip}>
+          <BlurView intensity={65} tint="light" style={StyleSheet.absoluteFill} />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: hexToRgba(cardColor, 0.56) }]} />
+
+          <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" pointerEvents="none">
+            <Defs>
+              <LinearGradient id="heroGlassSheen" x1="0%" y1="0%" x2="100%" y2="100%">
+                <Stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.54" />
+                <Stop offset="45%" stopColor="#FFFFFF" stopOpacity="0.12" />
+                <Stop offset="100%" stopColor={accentDark} stopOpacity="0.22" />
+              </LinearGradient>
+            </Defs>
+            <Rect width="100%" height="100%" fill="url(#heroGlassSheen)" />
+          </Svg>
+
+          <View style={styles.heroCardContent}>
+            <Text style={[styles.heroSchedRoom, { color: cardTheme.inkSoft }]}>
+              {course?.schedule || 'MWF 09:00 AM'} • {course?.room || 'Osmeña Rm 302'}
+            </Text>
+
+            <View style={styles.heroBottomRow}>
+              <Text style={[styles.heroSubject, { color: cardTheme.ink }]} numberOfLines={2}>
+                {course?.course_name || 'Software Engineering'}
+              </Text>
+              <Text style={[styles.heroStudents, { color: cardTheme.ink }]}>
+                {displayCount} {displayCount === 1 ? 'student' : 'students'}
+              </Text>
+            </View>
+          </View>
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+function ThemePickerPanel({
+  cardColor,
+  activeBase,
+  onPickColor,
+  onDeleteClass
+}) {
+  const [shadeBase, setShadeBase] = useState(null);
+
+  return (
+    <GlassPanel style={styles.themePanelWrap} intensity={65}>
+      <View style={styles.themePanelInner}>
+        <View style={styles.themePanelHeader}>
+          <Text style={styles.themePanelTitle}>Card Color Theme</Text>
+          <TouchableOpacity onPress={onDeleteClass}>
+            <Text style={styles.deleteLinkText}>Delete Class</Text>
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.swatchRow}
+        >
+          {COLOR_PRESETS.map(({ name, hex }) => (
+            <TouchableOpacity
+              key={hex}
+              accessibilityLabel={`${name}. Hold for shades.`}
+              delayLongPress={320}
+              style={[
+                styles.swatchCircle,
+                { backgroundColor: hex },
+                activeBase === hex && styles.swatchCircleActive
+              ]}
+              onPress={() => {
+                springLayout();
+                onPickColor(hex, hex);
+                setShadeBase(null);
+              }}
+              onLongPress={() => {
+                springLayout();
+                setShadeBase(hex);
+              }}
+            />
+          ))}
+        </ScrollView>
+
+        {shadeBase ? (
+          <View style={styles.shadeSection}>
+            <Text style={styles.shadeHint}>Light to dark — tap a shade:</Text>
+            <View style={styles.shadeRow}>
+              {getShades(shadeBase).map((shade) => (
+                <TouchableOpacity
+                  key={shade}
+                  style={[
+                    styles.shadeChip,
+                    { backgroundColor: shade },
+                    cardColor.toUpperCase() === shade && styles.shadeChipActive
+                  ]}
+                  onPress={() => onPickColor(shade, shadeBase)}
+                />
+              ))}
+            </View>
+          </View>
+        ) : (
+          <Text style={styles.shadeHint}>
+            Tap a color to match the card & aura. Hold for lighter or darker shades.
+          </Text>
+        )}
+      </View>
+    </GlassPanel>
+  );
+}
+
+function BentoMetricsGrid({
+  attendancePct,
+  presentCount,
+  totalCount,
+  anomalyCount,
+  cardColor,
+  enterAnim,
+  barAnims,
+  onToggleAnomalyFilter,
+  onOpenEnroll
+}) {
+  const enrollPressScale = useRef(new Animated.Value(1)).current;
+
+  const animateEnroll = (toValue) =>
+    Animated.spring(enrollPressScale, {
+      toValue,
+      friction: 6,
+      useNativeDriver: true
+    }).start();
+
+  return (
+    <Animated.View
+      style={[
+        styles.bentoGrid,
+        {
+          opacity: enterAnim,
+          transform: [
+            {
+              translateY: enterAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [28, 0]
+              })
+            }
+          ]
+        }
+      ]}
+    >
+      {/* Left Column: Verified Attendance + Weekly Activity */}
+      <View style={styles.bentoCol}>
+        <GlassPanel intensity={60}>
+          <View style={styles.bentoTileInner}>
+            <Text style={styles.bentoLabel}>Verified Attendance</Text>
+            <Text style={styles.bentoBigVal}>{attendancePct}%</Text>
+            <Text style={styles.bentoSub}>
+              {presentCount} of {totalCount} Present
+            </Text>
+          </View>
+        </GlassPanel>
+
+        <GlassPanel style={styles.bentoSecondTile} intensity={60}>
+          <View style={styles.bentoTileInner}>
+            <Text style={styles.bentoLabel}>Weekly Activity</Text>
+            <View style={styles.miniBarsRow}>
+              {MINI_WEEK_BARS.map((val, idx) => {
+                const barHeight = Math.round(val * 34);
+                const barY = barAnims[idx].interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [barHeight, 0]
+                });
+                return (
+                  <View
+                    key={idx}
+                    style={[styles.miniBarTrack, { height: barHeight }]}
+                  >
+                    <Animated.View
+                      style={[
+                        styles.miniBar,
+                        {
+                          height: barHeight,
+                          backgroundColor:
+                            idx % 2 === 0
+                              ? hexToRgba(cardColor, 0.9)
+                              : hexToRgba(cardColor, 0.44),
+                          transform: [{ translateY: barY }]
+                        }
+                      ]}
+                    />
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        </GlassPanel>
+      </View>
+
+      {/* Right Column: Pending Anomalies + Circular Enroll Trigger */}
+      <GlassPanel style={styles.bentoCol} intensity={60}>
+        <View style={styles.bentoRightInner}>
+          <TouchableOpacity activeOpacity={0.7} onPress={onToggleAnomalyFilter}>
+            <Text style={styles.bentoLabel}>Pending Anomalies</Text>
+            <Text style={[styles.bentoBigVal, anomalyCount > 0 && { color: THEME.danger }]}>
+              {anomalyCount} {anomalyCount === 1 ? 'Flag' : 'Flags'}
+            </Text>
+            <Text style={styles.bentoSub}>
+              {anomalyCount > 0 ? 'Tap to filter flags' : 'All clear today'}
+            </Text>
+          </TouchableOpacity>
+
+          <Animated.View
+            style={[styles.enrollBtnWrap, { transform: [{ scale: enrollPressScale }] }]}
+          >
+            <TouchableOpacity
+              style={styles.roundActionBtn}
+              activeOpacity={0.9}
+              onPressIn={() => animateEnroll(0.91)}
+              onPressOut={() => animateEnroll(1)}
+              onPress={onOpenEnroll}
+            >
+              <Text style={styles.roundActionBtnText}>Enroll</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </View>
+      </GlassPanel>
+    </Animated.View>
+  );
+}
+
 function GlassActionPill({ label, tintRgba, glowColor, scaleAnim, onPress }) {
   const pressScale = useRef(new Animated.Value(1)).current;
+
+  const animatePress = (toValue) =>
+    Animated.spring(pressScale, {
+      toValue,
+      friction: toValue < 1 ? 7 : 6,
+      useNativeDriver: true
+    }).start();
 
   return (
     <Animated.View
@@ -321,38 +641,27 @@ function GlassActionPill({ label, tintRgba, glowColor, scaleAnim, onPress }) {
     >
       <TouchableOpacity
         activeOpacity={0.9}
-        onPressIn={() =>
-          Animated.spring(pressScale, {
-            toValue: 0.92,
-            friction: 7,
-            useNativeDriver: true
-          }).start()
-        }
-        onPressOut={() =>
-          Animated.spring(pressScale, {
-            toValue: 1,
-            friction: 6,
-            useNativeDriver: true
-          }).start()
-        }
+        onPressIn={() => animatePress(0.92)}
+        onPressOut={() => animatePress(1)}
         onPress={onPress}
         style={styles.glassActionClip}
       >
         <BlurView intensity={48} tint="light" style={StyleSheet.absoluteFill} />
         <View style={[StyleSheet.absoluteFill, { backgroundColor: tintRgba }]} />
-        <View style={styles.glassActionTopSheen} />
         <Text style={styles.glassActionText}>{label}</Text>
       </TouchableOpacity>
     </Animated.View>
   );
 }
 
-// Swipeable Glass Student Row with Glassmorphic Present / Late / Absent Capsules
-function SwipeableStudentRow({ item, badge, accentColor, isLast, onSelectStatus }) {
+function SwipeableStudentRow({ student, accentColor, isLast, onSelectStatus }) {
   const translateX = useRef(new Animated.Value(0)).current;
   const badgePop = useRef(new Animated.Value(1)).current;
   const isOpen = useRef(false);
-  const ACTION_WIDTH = 228;
+
+  const badge = STATUS_BADGES[student.status] || STATUS_BADGES.ABSENT;
+  const avatarTint = hexToRgba(accentColor, 0.22);
+  const avatarInk = mixColor(accentColor, '#000000', 0.45);
 
   const actionsOpacity = translateX.interpolate({
     inputRange: [-64, -12, 0],
@@ -360,38 +669,10 @@ function SwipeableStudentRow({ item, badge, accentColor, isLast, onSelectStatus 
     extrapolate: 'clamp'
   });
 
-  const presentScale = translateX.interpolate({
-    inputRange: [-ACTION_WIDTH, -110, 0],
-    outputRange: [1, 0.92, 0.72],
-    extrapolate: 'clamp'
-  });
-
-  const lateScale = translateX.interpolate({
-    inputRange: [-ACTION_WIDTH, -80, 0],
-    outputRange: [1, 0.9, 0.68],
-    extrapolate: 'clamp'
-  });
-
-  const absentScale = translateX.interpolate({
-    inputRange: [-ACTION_WIDTH, -50, 0],
-    outputRange: [1, 0.88, 0.64],
-    extrapolate: 'clamp'
-  });
-
-  const openActions = () => {
-    isOpen.current = true;
+  const springDrawerTo = (open) => {
+    isOpen.current = open;
     Animated.spring(translateX, {
-      toValue: -ACTION_WIDTH,
-      friction: 7,
-      tension: 65,
-      useNativeDriver: true
-    }).start();
-  };
-
-  const closeActions = () => {
-    isOpen.current = false;
-    Animated.spring(translateX, {
-      toValue: 0,
+      toValue: open ? -SWIPE_ACTION_WIDTH : 0,
       friction: 7,
       tension: 65,
       useNativeDriver: true
@@ -400,45 +681,33 @@ function SwipeableStudentRow({ item, badge, accentColor, isLast, onSelectStatus 
 
   const panResponder = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponder: (_, gestureState) =>
-        Math.abs(gestureState.dx) > 10 &&
-        Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
-      onPanResponderMove: (_, gestureState) => {
-        const base = isOpen.current ? -ACTION_WIDTH : 0;
-        const nextX = Math.min(0, Math.max(-ACTION_WIDTH - 18, base + gestureState.dx));
-        translateX.setValue(nextX);
+      onMoveShouldSetPanResponder: (_, g) =>
+        Math.abs(g.dx) > 10 && Math.abs(g.dx) > Math.abs(g.dy),
+      onPanResponderMove: (_, g) => {
+        const base = isOpen.current ? -SWIPE_ACTION_WIDTH : 0;
+        const clamped = Math.min(0, Math.max(-SWIPE_ACTION_WIDTH - 18, base + g.dx));
+        translateX.setValue(clamped);
       },
-      onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dx < -45 || gestureState.vx < -0.45) {
-          openActions();
-        } else if (gestureState.dx > 45 || gestureState.vx > 0.45) {
-          closeActions();
+      onPanResponderRelease: (_, g) => {
+        if (g.dx < -45 || g.vx < -0.45) {
+          springDrawerTo(true);
+        } else if (g.dx > 45 || g.vx > 0.45) {
+          springDrawerTo(false);
         } else {
-          isOpen.current ? openActions() : closeActions();
+          springDrawerTo(isOpen.current);
         }
       }
     })
   ).current;
 
-  const chooseStatus = (newStatus) => {
-    closeActions();
-    onSelectStatus(item.id, newStatus);
+  const handleChooseStatus = (newStatus) => {
+    springDrawerTo(false);
+    onSelectStatus(student.id, newStatus);
     Animated.sequence([
       Animated.spring(badgePop, { toValue: 1.18, friction: 5, useNativeDriver: true }),
       Animated.spring(badgePop, { toValue: 1, friction: 6, useNativeDriver: true })
     ]).start();
   };
-
-  const initials = item.name
-    .split(/[\s,]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0])
-    .join('')
-    .toUpperCase();
-
-  const avatarTint = hexToRgba(accentColor, 0.22);
-  const avatarInk = mixColor(accentColor, '#000000', 0.45);
 
   return (
     <View style={[styles.swipeRowWrap, !isLast && styles.rowDivider]}>
@@ -446,73 +715,61 @@ function SwipeableStudentRow({ item, badge, accentColor, isLast, onSelectStatus 
       <Animated.View
         style={[
           styles.hiddenActionsContainer,
-          { width: ACTION_WIDTH, opacity: actionsOpacity }
+          { width: SWIPE_ACTION_WIDTH, opacity: actionsOpacity }
         ]}
       >
-        <GlassActionPill
-          label="Present"
-          tintRgba="rgba(22, 163, 74, 0.58)"
-          glowColor="#16A34A"
-          scaleAnim={presentScale}
-          onPress={() => chooseStatus('PRESENT')}
-        />
-        <GlassActionPill
-          label="Late"
-          tintRgba="rgba(217, 119, 6, 0.58)"
-          glowColor="#D97706"
-          scaleAnim={lateScale}
-          onPress={() => chooseStatus('LATE')}
-        />
-        <GlassActionPill
-          label="Absent"
-          tintRgba="rgba(71, 85, 105, 0.56)"
-          glowColor="#475569"
-          scaleAnim={absentScale}
-          onPress={() => chooseStatus('ABSENT')}
-        />
+        {SWIPE_ACTIONS.map((action) => {
+          const pillScale = translateX.interpolate({
+            inputRange: [-SWIPE_ACTION_WIDTH, action.midX, 0],
+            outputRange: [1, 0.9, action.minScale],
+            extrapolate: 'clamp'
+          });
+          return (
+            <GlassActionPill
+              key={action.status}
+              label={action.label}
+              tintRgba={action.tintRgba}
+              glowColor={action.glow}
+              scaleAnim={pillScale}
+              onPress={() => handleChooseStatus(action.status)}
+            />
+          );
+        })}
       </Animated.View>
 
-      {/* Foreground Glass Student Row */}
+      {/* Foreground Glass Row */}
       <Animated.View
         {...panResponder.panHandlers}
         style={[styles.studentRowInner, { transform: [{ translateX }] }]}
       >
         <View style={[styles.studentAvatar, { backgroundColor: avatarTint }]}>
           <Text style={[styles.studentAvatarText, { color: avatarInk }]}>
-            {initials}
+            {getInitials(student.name)}
           </Text>
         </View>
 
-        <View style={{ flex: 1, paddingRight: 10 }}>
+        <View style={styles.studentInfoCol}>
           <Text style={styles.studentName} numberOfLines={1}>
-            {item.name}
+            {student.name}
           </Text>
           <Text style={styles.studentMeta}>
-            ID {item.id} • Seat {item.seat}
+            ID {student.id} • Seat {student.seat}
           </Text>
-          {item.anomaly_note ? (
+          {student.anomaly_note ? (
             <Text style={styles.anomalyInlineText} numberOfLines={1}>
-              ⚠️ {item.anomaly_note}
+              ⚠️ {student.anomaly_note}
             </Text>
           ) : (
-            <Text style={styles.studentConfidence}>Match {item.confidence}</Text>
+            <Text style={styles.studentConfidence}>Match {student.confidence}</Text>
           )}
         </View>
 
         <View style={styles.rowRightCol}>
           <Animated.View
-            style={[
-              styles.statusGlassOuter,
-              { transform: [{ scale: badgePop }] }
-            ]}
+            style={[styles.statusGlassOuter, { transform: [{ scale: badgePop }] }]}
           >
             <BlurView intensity={38} tint="light" style={StyleSheet.absoluteFill} />
-            <View
-              style={[
-                StyleSheet.absoluteFill,
-                { backgroundColor: badge.glassTint }
-              ]}
-            />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: badge.glassTint }]} />
             <Text style={[styles.statusPillText, { color: badge.text }]}>
               {badge.label}
             </Text>
@@ -524,6 +781,351 @@ function SwipeableStudentRow({ item, badge, accentColor, isLast, onSelectStatus 
   );
 }
 
+function BiometricEnrollmentModal({ visible, onClose, cardColor, onEnroll }) {
+  const [form, setForm] = useState(INITIAL_ENROLL_FORM);
+
+  const backdropOpacity = useRef(new Animated.Value(0)).current;
+  const sheetY = useRef(new Animated.Value(80)).current;
+  const sheetScale = useRef(new Animated.Value(0.95)).current;
+  const checkScale = useRef(new Animated.Value(1)).current;
+  const camScale = useRef(new Animated.Value(1)).current;
+  const galScale = useRef(new Animated.Value(1)).current;
+  const submitScale = useRef(new Animated.Value(1)).current;
+
+  const accentDark = mixColor(cardColor, '#000000', 0.35);
+
+  useEffect(() => {
+    if (!visible) return;
+
+    backdropOpacity.setValue(0);
+    sheetY.setValue(80);
+    sheetScale.setValue(0.95);
+
+    Animated.parallel([
+      Animated.timing(backdropOpacity, {
+        toValue: 1,
+        duration: 240,
+        useNativeDriver: true
+      }),
+      Animated.spring(sheetY, {
+        toValue: 0,
+        friction: 8,
+        tension: 58,
+        useNativeDriver: true
+      }),
+      Animated.spring(sheetScale, {
+        toValue: 1,
+        friction: 8,
+        tension: 58,
+        useNativeDriver: true
+      })
+    ]).start();
+  }, [visible]);
+
+  const updateField = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
+
+  const animateSpring = (anim, toValue) =>
+    Animated.spring(anim, {
+      toValue,
+      friction: toValue < 1 ? 7 : 6,
+      useNativeDriver: true
+    }).start();
+
+  const handleClose = () => {
+    Animated.parallel([
+      Animated.timing(backdropOpacity, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver: true
+      }),
+      Animated.timing(sheetY, {
+        toValue: 70,
+        duration: 180,
+        useNativeDriver: true
+      })
+    ]).start(() => onClose());
+  };
+
+  const handleCapturePhoto = async (source) => {
+    const isCamera = source === 'CAMERA';
+    const permission = isCamera
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permission.granted) {
+      Alert.alert(
+        isCamera ? 'Camera Permission Needed' : 'Gallery Permission Needed',
+        isCamera
+          ? 'Please allow camera access to scan student faces.'
+          : 'Please allow photo library access to upload student photos.'
+      );
+      return;
+    }
+
+    const result = isCamera
+      ? await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.7 })
+      : await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.7
+        });
+
+    if (!result.canceled && result.assets?.length > 0) {
+      setForm((prev) => ({
+        ...prev,
+        photoUri: result.assets[0].uri,
+        captureSource: source
+      }));
+    }
+  };
+
+  const handleToggleConsent = () => {
+    updateField('dpaAccepted', !form.dpaAccepted);
+    Animated.sequence([
+      Animated.spring(checkScale, { toValue: 1.24, friction: 5, useNativeDriver: true }),
+      Animated.spring(checkScale, { toValue: 1, friction: 6, useNativeDriver: true })
+    ]).start();
+  };
+
+  const handleSubmit = () => {
+    if (!form.name.trim() || !form.studentId.trim()) {
+      Alert.alert('Missing Info', 'Please enter the student name and DLSAU ID.');
+      return;
+    }
+    if (!form.photoUri) {
+      Alert.alert(
+        'Photo Required',
+        'Please take a photo with the camera or upload a photo from your library.'
+      );
+      return;
+    }
+    if (!form.dpaAccepted) {
+      Alert.alert(
+        'DPA Consent Required',
+        'Student must accept the RA 10173 Data Privacy Act consent agreement.'
+      );
+      return;
+    }
+
+    onEnroll({
+      id: form.studentId.trim(),
+      name: form.name.trim(),
+      seat: form.seat.trim().toUpperCase() || 'C1',
+      status: 'PRESENT',
+      confidence: '99.2%',
+      biometric_enrolled: true,
+      anomaly_note: null
+    });
+
+    setForm(INITIAL_ENROLL_FORM);
+    handleClose();
+
+    Alert.alert(
+      'Biometric Vector Encrypted',
+      '128-D MobileFaceNet embedding stored in AES-256 SQLCipher. Raw source photo purged per Zero-Retention Policy.'
+    );
+  };
+
+  const activePhotoStyle = {
+    backgroundColor: hexToRgba(cardColor, 0.2),
+    borderColor: cardColor
+  };
+
+  return (
+    <Modal visible={visible} animationType="none" transparent onRequestClose={handleClose}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.modalOverlay}
+      >
+        {/* Blurred Backdrop */}
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: backdropOpacity }]}>
+          <BlurView intensity={28} tint="dark" style={StyleSheet.absoluteFill} />
+          <TouchableOpacity
+            style={styles.modalBackdropTint}
+            activeOpacity={1}
+            onPress={handleClose}
+          />
+        </Animated.View>
+
+        {/* Floating Frosted Glass Enrollment Sheet */}
+        <Animated.View
+          style={[
+            styles.glassModalShadow,
+            {
+              opacity: backdropOpacity,
+              transform: [{ translateY: sheetY }, { scale: sheetScale }]
+            }
+          ]}
+        >
+          <View style={styles.glassModalClip}>
+            <BlurView intensity={80} tint="light" style={StyleSheet.absoluteFill} />
+            <View style={styles.glassModalTint} />
+
+            <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" pointerEvents="none">
+              <Defs>
+                <RadialGradient id="bioAura" cx="85%" cy="10%" r="65%">
+                  <Stop offset="0%" stopColor={cardColor} stopOpacity="0.34" />
+                  <Stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
+                </RadialGradient>
+                <LinearGradient id="bioSheen" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <Stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.56" />
+                  <Stop offset="45%" stopColor="#FFFFFF" stopOpacity="0.12" />
+                  <Stop offset="100%" stopColor="#FFFFFF" stopOpacity="0.02" />
+                </LinearGradient>
+              </Defs>
+              <Rect width="100%" height="100%" fill="url(#bioAura)" />
+              <Rect width="100%" height="100%" fill="url(#bioSheen)" />
+            </Svg>
+
+            <View style={styles.glassModalInner}>
+              <View style={styles.modalHandle} />
+              <ScrollView bounces={false} keyboardShouldPersistTaps="handled">
+                <View style={styles.modalHeaderRow}>
+                  <Text style={styles.modalTitle}>DPA Biometric Enrollment</Text>
+                  <TouchableOpacity style={styles.modalClosePill} onPress={handleClose}>
+                    <Text style={styles.closeBtnText}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+                <Text style={[styles.modalSubtitle, { color: accentDark }]}>
+                  Republic Act No. 10173 (Data Privacy Act of 2012) Compliance
+                </Text>
+
+                <Text style={styles.label}>Student Full Name</Text>
+                <TextInput
+                  style={styles.glassInput}
+                  placeholder="e.g. Dela Cruz, Juan"
+                  placeholderTextColor={THEME.muted}
+                  value={form.name}
+                  onChangeText={(val) => updateField('name', val)}
+                />
+
+                <View style={styles.idSeatRow}>
+                  <View style={styles.idCol}>
+                    <Text style={styles.label}>DLSAU Student ID</Text>
+                    <TextInput
+                      style={styles.glassInput}
+                      placeholder="2024-1099"
+                      placeholderTextColor={THEME.muted}
+                      value={form.studentId}
+                      onChangeText={(val) => updateField('studentId', val)}
+                    />
+                  </View>
+                  <View style={styles.seatCol}>
+                    <Text style={styles.label}>Seat Code</Text>
+                    <TextInput
+                      style={styles.glassInput}
+                      placeholder="B3"
+                      placeholderTextColor={THEME.muted}
+                      value={form.seat}
+                      onChangeText={(val) => updateField('seat', val)}
+                    />
+                  </View>
+                </View>
+
+                <Text style={styles.label}>Facial Biometric Source</Text>
+                <View style={styles.photoButtonsRow}>
+                  <Animated.View style={[styles.photoBtnCol, { transform: [{ scale: camScale }] }]}>
+                    <TouchableOpacity
+                      style={[
+                        styles.glassPhotoOptionBtn,
+                        form.captureSource === 'CAMERA' && activePhotoStyle
+                      ]}
+                      activeOpacity={0.9}
+                      onPressIn={() => animateSpring(camScale, 0.94)}
+                      onPressOut={() => animateSpring(camScale, 1)}
+                      onPress={() => handleCapturePhoto('CAMERA')}
+                    >
+                      <Text style={styles.photoOptionIcon}>📷</Text>
+                      <Text style={styles.photoOptionText}>Use Camera</Text>
+                    </TouchableOpacity>
+                  </Animated.View>
+
+                  <Animated.View style={[styles.photoBtnCol, { transform: [{ scale: galScale }] }]}>
+                    <TouchableOpacity
+                      style={[
+                        styles.glassPhotoOptionBtn,
+                        form.captureSource === 'GALLERY' && activePhotoStyle
+                      ]}
+                      activeOpacity={0.9}
+                      onPressIn={() => animateSpring(galScale, 0.94)}
+                      onPressOut={() => animateSpring(galScale, 1)}
+                      onPress={() => handleCapturePhoto('GALLERY')}
+                    >
+                      <Text style={styles.photoOptionIcon}>🖼️</Text>
+                      <Text style={styles.photoOptionText}>Upload Photo</Text>
+                    </TouchableOpacity>
+                  </Animated.View>
+                </View>
+
+                {form.photoUri && (
+                  <View
+                    style={[
+                      styles.glassPreviewBanner,
+                      {
+                        backgroundColor: hexToRgba(cardColor, 0.16),
+                        borderColor: hexToRgba(cardColor, 0.65)
+                      }
+                    ]}
+                  >
+                    <Image
+                      source={{ uri: form.photoUri }}
+                      style={[styles.previewThumb, { borderColor: cardColor }]}
+                    />
+                    <View style={styles.previewTextCol}>
+                      <Text style={styles.biometricTitle}>
+                        ✓ 128-D MobileFaceNet Vector Ready
+                      </Text>
+                      <Text style={styles.biometricSub}>
+                        Source photo will be auto-purged immediately after encryption.
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+                <TouchableOpacity
+                  style={styles.glassDpaBox}
+                  activeOpacity={0.85}
+                  onPress={handleToggleConsent}
+                >
+                  <Animated.View
+                    style={[
+                      styles.checkbox,
+                      { transform: [{ scale: checkScale }] },
+                      form.dpaAccepted && { backgroundColor: cardColor, borderColor: cardColor }
+                    ]}
+                  >
+                    {form.dpaAccepted && <Text style={styles.checkmark}>✓</Text>}
+                  </Animated.View>
+                  <Text style={styles.dpaText}>
+                    I confirm the student has signed the RA 10173 Data Privacy Consent Form. Tingin stores only encrypted mathematical facial embeddings and immediately deletes raw camera images.
+                  </Text>
+                </TouchableOpacity>
+
+                <Animated.View style={{ transform: [{ scale: submitScale }] }}>
+                  <TouchableOpacity
+                    style={styles.glassPrimaryBtn}
+                    activeOpacity={0.92}
+                    onPressIn={() => animateSpring(submitScale, 0.96)}
+                    onPressOut={() => animateSpring(submitScale, 1)}
+                    onPress={handleSubmit}
+                  >
+                    <Text style={styles.primaryBtnText}>Complete Biometric Enrollment</Text>
+                  </TouchableOpacity>
+                </Animated.View>
+              </ScrollView>
+            </View>
+          </View>
+        </Animated.View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+// =============================================================================
+// 4. MAIN SCREEN
+// =============================================================================
+
 export default function RosterScreen({
   course,
   onUpdateCourseColor,
@@ -531,64 +1133,40 @@ export default function RosterScreen({
   setCurrentScreen
 }) {
   const courseKey = course?.course_id || 'CS301';
-  const cardColor = course?.card_color || DEFAULT_COLOR;
+  const cardColor = course?.card_color || THEME.defaultCardColor;
   const activeBase = course?.card_base || cardColor;
-  const cardTheme = getCardTheme(cardColor);
 
   const [students, setStudents] = useState(
     INITIAL_STUDENTS[courseKey] || INITIAL_STUDENTS.CS301
   );
   const [searchQuery, setSearchQuery] = useState('');
   const [filterMode, setFilterMode] = useState('ALL'); // 'ALL' | 'ANOMALY'
-
-  // Inline Card Settings / Color Theme Panel
   const [showThemePanel, setShowThemePanel] = useState(false);
-  const [shadeBase, setShadeBase] = useState(null);
+  const [enrollModalVisible, setEnrollModalVisible] = useState(false);
 
-  // Screen 4: DPA Consent & Biometric Upload Modal State
-  const [dpaModalVisible, setDpaModalVisible] = useState(false);
-  const [dpaAccepted, setDpaAccepted] = useState(false);
-  const [newStudentName, setNewStudentName] = useState('');
-  const [newStudentId, setNewStudentId] = useState('');
-  const [newStudentSeat, setNewStudentSeat] = useState('');
-  const [capturedPhotoUri, setCapturedPhotoUri] = useState(null);
-  const [captureSource, setCaptureSource] = useState('');
-
-  // Premium Motion Refs
+  // Screen motion refs
   const scrollY = useRef(new Animated.Value(0)).current;
   const heroEnter = useRef(new Animated.Value(0)).current;
   const bentoEnter = useRef(new Animated.Value(0)).current;
   const listEnter = useRef(new Animated.Value(0)).current;
-  const barReveal = useRef(MINI_WEEK_BARS.map(() => new Animated.Value(0))).current;
-  const heroPressScale = useRef(new Animated.Value(1)).current;
-  const enrollPressScale = useRef(new Animated.Value(1)).current;
+  const barAnims = useRef(MINI_WEEK_BARS.map(() => new Animated.Value(0))).current;
 
-  // Staggered spring entrance on screen mount
   useEffect(() => {
-    Animated.stagger(80, [
-      Animated.spring(heroEnter, {
-        toValue: 1,
-        friction: 7,
-        tension: 52,
-        useNativeDriver: true
-      }),
-      Animated.spring(bentoEnter, {
-        toValue: 1,
-        friction: 7,
-        tension: 52,
-        useNativeDriver: true
-      }),
-      Animated.spring(listEnter, {
-        toValue: 1,
-        friction: 7,
-        tension: 52,
-        useNativeDriver: true
-      })
-    ]).start();
+    Animated.stagger(
+      80,
+      [heroEnter, bentoEnter, listEnter].map((anim) =>
+        Animated.spring(anim, {
+          toValue: 1,
+          friction: 7,
+          tension: 52,
+          useNativeDriver: true
+        })
+      )
+    ).start();
 
     Animated.stagger(
       55,
-      barReveal.map((anim) =>
+      barAnims.map((anim) =>
         Animated.spring(anim, {
           toValue: 1,
           friction: 7,
@@ -600,33 +1178,18 @@ export default function RosterScreen({
   }, []);
 
   const filteredStudents = students.filter((s) => {
+    const query = searchQuery.toLowerCase();
     const matchesSearch =
-      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.id.toLowerCase().includes(searchQuery.toLowerCase());
-    if (filterMode === 'ANOMALY') {
-      return matchesSearch && s.status === 'ANOMALY';
-    }
-    return matchesSearch;
+      s.name.toLowerCase().includes(query) || s.id.toLowerCase().includes(query);
+    return filterMode === 'ANOMALY'
+      ? matchesSearch && s.status === 'ANOMALY'
+      : matchesSearch;
   });
 
   const anomalyCount = students.filter((s) => s.status === 'ANOMALY').length;
   const presentCount = students.filter((s) => s.status === 'PRESENT').length;
   const attendancePct =
     students.length > 0 ? Math.round((presentCount / students.length) * 100) : 0;
-
-  const accentDark = mixColor(cardColor, '#000000', 0.35);
-
-  // Subtle parallax & scale on Hero Card as you scroll
-  const heroParallaxY = scrollY.interpolate({
-    inputRange: [-120, 0, 220],
-    outputRange: [-18, 0, 28],
-    extrapolate: 'clamp'
-  });
-  const heroScrollScale = scrollY.interpolate({
-    inputRange: [-120, 0, 220],
-    outputRange: [1.03, 1, 0.94],
-    extrapolate: 'clamp'
-  });
 
   const handleSetStatus = (studentId, newStatus) => {
     springLayout();
@@ -637,9 +1200,13 @@ export default function RosterScreen({
     );
   };
 
+  const handleEnrollStudent = (newStudent) => {
+    springLayout();
+    setStudents((prev) => [newStudent, ...prev]);
+  };
+
   const handleToggleThemePanel = () => {
     springLayout();
-    setShadeBase(null);
     setShowThemePanel((prev) => !prev);
   };
 
@@ -656,136 +1223,21 @@ export default function RosterScreen({
 
   const handleDeleteCurrentClass = () => {
     if (!course || !onDeleteCourse) return;
-    Alert.alert(
-      'Delete Class',
-      `Remove ${course.course_name} from your classes?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => onDeleteCourse(course.course_id)
-        }
-      ]
-    );
-  };
-
-  const handleTakePhoto = async () => {
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Camera Permission Needed', 'Please allow camera access to scan student faces.');
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.7
-    });
-    if (!result.canceled && result.assets?.length > 0) {
-      setCapturedPhotoUri(result.assets[0].uri);
-      setCaptureSource('CAMERA');
-    }
-  };
-
-  const handlePickImage = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Gallery Permission Needed', 'Please allow photo library access to upload student photos.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.7
-    });
-    if (!result.canceled && result.assets?.length > 0) {
-      setCapturedPhotoUri(result.assets[0].uri);
-      setCaptureSource('GALLERY');
-    }
-  };
-
-  const handleEnrollStudent = () => {
-    if (!newStudentName.trim() || !newStudentId.trim()) {
-      Alert.alert('Missing Info', 'Please enter the student name and DLSAU ID.');
-      return;
-    }
-    if (!capturedPhotoUri) {
-      Alert.alert(
-        'Photo Required',
-        'Please take a photo with the camera or upload a photo from your library.'
-      );
-      return;
-    }
-    if (!dpaAccepted) {
-      Alert.alert(
-        'DPA Consent Required',
-        'Student must accept the RA 10173 Data Privacy Act consent agreement.'
-      );
-      return;
-    }
-
-    const newEntry = {
-      id: newStudentId.trim(),
-      name: newStudentName.trim(),
-      seat: newStudentSeat.trim().toUpperCase() || 'C1',
-      status: 'PRESENT',
-      confidence: '99.2%',
-      biometric_enrolled: true,
-      anomaly_note: null
-    };
-
-    springLayout();
-    setStudents([newEntry, ...students]);
-    setNewStudentName('');
-    setNewStudentId('');
-    setNewStudentSeat('');
-    setDpaAccepted(false);
-    setCapturedPhotoUri(null);
-    setCaptureSource('');
-    setDpaModalVisible(false);
-
-    Alert.alert(
-      'Biometric Vector Encrypted',
-      '128-D MobileFaceNet embedding stored in AES-256 SQLCipher. Raw source photo purged per Zero-Retention Policy.'
-    );
-  };
-
-  const getBadgeStyle = (status) => {
-    switch (status) {
-      case 'PRESENT':
-        return {
-          glassTint: 'rgba(22, 163, 74, 0.24)',
-          text: '#14532D',
-          label: 'Present'
-        };
-      case 'LATE':
-        return {
-          glassTint: 'rgba(217, 119, 6, 0.24)',
-          text: '#78350F',
-          label: 'Late'
-        };
-      case 'ANOMALY':
-        return {
-          glassTint: 'rgba(220, 38, 38, 0.24)',
-          text: '#991B1B',
-          label: 'Anomaly'
-        };
-      default:
-        return {
-          glassTint: 'rgba(100, 116, 139, 0.22)',
-          text: '#334155',
-          label: 'Absent'
-        };
-    }
+    Alert.alert('Delete Class', `Remove ${course.course_name} from your classes?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => onDeleteCourse(course.course_id)
+      }
+    ]);
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Living Glowing Card-Color Aura Background */}
       <CardAuraBackground color={cardColor} />
 
-      {/* Top Glass Header ("Done" + "•••") */}
+      {/* Top Glass Header */}
       <View style={styles.topHeader}>
         <TouchableOpacity
           style={styles.doneGlassBtn}
@@ -814,269 +1266,39 @@ export default function RosterScreen({
           { useNativeDriver: true }
         )}
       >
-        {/* GLASSMORPHIC HERO CLASS CARD with Entrance + Scroll Parallax + Press Scale */}
-        <Animated.View
-          style={{
-            opacity: heroEnter,
-            transform: [
-              {
-                translateY: Animated.add(
-                  heroEnter.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }),
-                  heroParallaxY
-                )
-              },
-              { scale: Animated.multiply(heroScrollScale, heroPressScale) }
-            ]
-          }}
-        >
-          <TouchableOpacity
-            activeOpacity={0.96}
-            onPressIn={() =>
-              Animated.spring(heroPressScale, {
-                toValue: 0.975,
-                friction: 7,
-                useNativeDriver: true
-              }).start()
-            }
-            onPressOut={() =>
-              Animated.spring(heroPressScale, {
-                toValue: 1,
-                friction: 6,
-                useNativeDriver: true
-              }).start()
-            }
-            onPress={handleToggleThemePanel}
-            style={[styles.heroCardShadow, { shadowColor: cardColor }]}
-          >
-            <View style={styles.heroCardClip}>
-              <BlurView intensity={65} tint="light" style={StyleSheet.absoluteFill} />
-              <View
-                style={[
-                  StyleSheet.absoluteFill,
-                  { backgroundColor: hexToRgba(cardColor, 0.56) }
-                ]}
-              />
-              <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" pointerEvents="none">
-                <Defs>
-                  <LinearGradient id="heroGlassSheen" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <Stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.54" />
-                    <Stop offset="45%" stopColor="#FFFFFF" stopOpacity="0.12" />
-                    <Stop offset="100%" stopColor={accentDark} stopOpacity="0.22" />
-                  </LinearGradient>
-                </Defs>
-                <Rect width="100%" height="100%" fill="url(#heroGlassSheen)" />
-              </Svg>
+        <HeroClassCard
+          course={course}
+          studentCount={students.length}
+          cardColor={cardColor}
+          enterAnim={heroEnter}
+          scrollY={scrollY}
+          onPress={handleToggleThemePanel}
+        />
 
-              <View style={styles.heroCardContent}>
-                <Text style={[styles.heroSchedRoom, { color: cardTheme.inkSoft }]}>
-                  {course?.schedule || 'MWF 09:00 AM'} • {course?.room || 'Osmeña Rm 302'}
-                </Text>
-
-                <View style={styles.heroBottomRow}>
-                  <Text
-                    style={[styles.heroSubject, { color: cardTheme.ink }]}
-                    numberOfLines={2}
-                  >
-                    {course?.course_name || 'Software Engineering'}
-                  </Text>
-                  <Text style={[styles.heroStudents, { color: cardTheme.ink }]}>
-                    {course?.enrolled_count ?? students.length}{' '}
-                    {(course?.enrolled_count ?? students.length) === 1
-                      ? 'student'
-                      : 'students'}
-                  </Text>
-                </View>
-              </View>
-            </View>
-          </TouchableOpacity>
-        </Animated.View>
-
-        {/* GLASS CARD COLOR THEME PANEL (Toggled smoothly via LayoutAnimation) */}
         {showThemePanel && (
-          <GlassPanel style={{ marginBottom: 16 }} intensity={65}>
-            <View style={styles.themePanelInner}>
-              <View style={styles.themePanelHeader}>
-                <Text style={styles.themePanelTitle}>Card Color Theme</Text>
-                <TouchableOpacity onPress={handleDeleteCurrentClass}>
-                  <Text style={styles.deleteLinkText}>Delete Class</Text>
-                </TouchableOpacity>
-              </View>
-
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.swatchRow}
-              >
-                {COLOR_PRESETS.map(({ name, hex }) => (
-                  <TouchableOpacity
-                    key={hex}
-                    accessibilityLabel={`${name}. Hold for shades.`}
-                    delayLongPress={320}
-                    style={[
-                      styles.swatchCircle,
-                      { backgroundColor: hex },
-                      activeBase === hex && styles.swatchCircleActive
-                    ]}
-                    onPress={() => {
-                      springLayout();
-                      handlePickColor(hex, hex);
-                      setShadeBase(null);
-                    }}
-                    onLongPress={() => {
-                      springLayout();
-                      setShadeBase(hex);
-                    }}
-                  />
-                ))}
-              </ScrollView>
-
-              {shadeBase ? (
-                <View style={styles.shadeSection}>
-                  <Text style={styles.shadeHint}>Light to dark — tap a shade:</Text>
-                  <View style={styles.shadeRow}>
-                    {getShades(shadeBase).map((shade) => (
-                      <TouchableOpacity
-                        key={shade}
-                        style={[
-                          styles.shadeChip,
-                          { backgroundColor: shade },
-                          cardColor.toUpperCase() === shade && styles.shadeChipActive
-                        ]}
-                        onPress={() => handlePickColor(shade, shadeBase)}
-                      />
-                    ))}
-                  </View>
-                </View>
-              ) : (
-                <Text style={styles.shadeHint}>
-                  Tap a color to match the card & aura. Hold for lighter or darker shades.
-                </Text>
-              )}
-            </View>
-          </GlassPanel>
+          <ThemePickerPanel
+            cardColor={cardColor}
+            activeBase={activeBase}
+            onPickColor={handlePickColor}
+            onDeleteClass={handleDeleteCurrentClass}
+          />
         )}
 
-        {/* GLASSMORPHIC BENTO DASHBOARD GRID */}
-        <Animated.View
-          style={[
-            styles.bentoGrid,
-            {
-              opacity: bentoEnter,
-              transform: [
-                {
-                  translateY: bentoEnter.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [28, 0]
-                  })
-                }
-              ]
-            }
-          ]}
-        >
-          {/* Left Column: 2 Stacked Glass Tiles */}
-          <View style={styles.bentoLeftCol}>
-            <GlassPanel intensity={60}>
-              <View style={styles.bentoTileInner}>
-                <Text style={styles.bentoLabel}>Verified Attendance</Text>
-                <Text style={styles.bentoBigVal}>{attendancePct}%</Text>
-                <Text style={styles.bentoSub}>
-                  {presentCount} of {students.length} Present
-                </Text>
-              </View>
-            </GlassPanel>
+        <BentoMetricsGrid
+          attendancePct={attendancePct}
+          presentCount={presentCount}
+          totalCount={students.length}
+          anomalyCount={anomalyCount}
+          cardColor={cardColor}
+          enterAnim={bentoEnter}
+          barAnims={barAnims}
+          onToggleAnomalyFilter={() =>
+            handleFilterChange(filterMode === 'ANOMALY' ? 'ALL' : 'ANOMALY')
+          }
+          onOpenEnroll={() => setEnrollModalVisible(true)}
+        />
 
-            <GlassPanel style={{ marginTop: 12 }} intensity={60}>
-              <View style={styles.bentoTileInner}>
-                <Text style={styles.bentoLabel}>Weekly Activity</Text>
-                <View style={styles.miniBarsRow}>
-                  {MINI_WEEK_BARS.map((val, idx) => {
-                    const barH = Math.round(val * 34);
-                    const barY = barReveal[idx].interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [barH, 0]
-                    });
-                    return (
-                      <View
-                        key={idx}
-                        style={{
-                          width: 8,
-                          height: barH,
-                          overflow: 'hidden',
-                          borderRadius: 4
-                        }}
-                      >
-                        <Animated.View
-                          style={[
-                            styles.miniBar,
-                            {
-                              height: barH,
-                              backgroundColor:
-                                idx % 2 === 0
-                                  ? hexToRgba(cardColor, 0.9)
-                                  : hexToRgba(cardColor, 0.44),
-                              transform: [{ translateY: barY }]
-                            }
-                          ]}
-                        />
-                      </View>
-                    );
-                  })}
-                </View>
-              </View>
-            </GlassPanel>
-          </View>
-
-          {/* Right Column: Tall Glass Tile + Tactile Circular Enroll Button */}
-          <GlassPanel style={styles.bentoRightCol} intensity={60}>
-            <View style={styles.bentoRightInner}>
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={() =>
-                  handleFilterChange(filterMode === 'ANOMALY' ? 'ALL' : 'ANOMALY')
-                }
-              >
-                <Text style={styles.bentoLabel}>Pending Anomalies</Text>
-                <Text
-                  style={[
-                    styles.bentoBigVal,
-                    anomalyCount > 0 && { color: '#DC2626' }
-                  ]}
-                >
-                  {anomalyCount} {anomalyCount === 1 ? 'Flag' : 'Flags'}
-                </Text>
-                <Text style={styles.bentoSub}>
-                  {anomalyCount > 0 ? 'Tap to filter flags' : 'All clear today'}
-                </Text>
-              </TouchableOpacity>
-
-              <Animated.View style={{ alignSelf: 'flex-end', transform: [{ scale: enrollPressScale }] }}>
-                <TouchableOpacity
-                  style={styles.roundActionBtn}
-                  activeOpacity={0.9}
-                  onPressIn={() =>
-                    Animated.spring(enrollPressScale, {
-                      toValue: 0.91,
-                      friction: 6,
-                      useNativeDriver: true
-                    }).start()
-                  }
-                  onPressOut={() =>
-                    Animated.spring(enrollPressScale, {
-                      toValue: 1,
-                      friction: 6,
-                      useNativeDriver: true
-                    }).start()
-                  }
-                  onPress={() => setDpaModalVisible(true)}
-                >
-                  <Text style={styles.roundActionBtnText}>Enroll</Text>
-                </TouchableOpacity>
-              </Animated.View>
-            </View>
-          </GlassPanel>
-        </Animated.View>
-
-        {/* CLASS LIST SECTION */}
+        {/* Class List Section */}
         <Animated.View
           style={{
             opacity: listEnter,
@@ -1104,7 +1326,7 @@ export default function RosterScreen({
                 <Text
                   style={[
                     styles.filterPillText,
-                    filterMode === 'ALL' && { color: '#FFFFFF' }
+                    filterMode === 'ALL' && styles.filterPillTextActive
                   ]}
                 >
                   All ({students.length})
@@ -1121,7 +1343,7 @@ export default function RosterScreen({
                 <Text
                   style={[
                     styles.filterPillText,
-                    filterMode === 'ANOMALY' && { color: '#FFFFFF' }
+                    filterMode === 'ANOMALY' && styles.filterPillTextActive
                   ]}
                 >
                   Anomalies ({anomalyCount})
@@ -1130,29 +1352,26 @@ export default function RosterScreen({
             </View>
           </View>
 
-          {/* Frosted Glass Search Input */}
-          <GlassPanel style={{ marginBottom: 12, borderRadius: 16 }} intensity={55}>
+          <GlassPanel style={styles.searchPanelWrap} intensity={55}>
             <TextInput
               style={styles.searchInput}
               placeholder="Search student name or DLSAU ID..."
-              placeholderTextColor="#64748B"
+              placeholderTextColor={THEME.muted}
               value={searchQuery}
               onChangeText={setSearchQuery}
             />
           </GlassPanel>
 
-          {/* Glassmorphic Grouped Student List Card */}
-          <GlassPanel style={{ borderRadius: 22 }} intensity={62}>
+          <GlassPanel style={styles.listGroupWrap} intensity={62}>
             {filteredStudents.length === 0 ? (
               <View style={styles.emptyListBox}>
                 <Text style={styles.emptyListText}>No matching students found.</Text>
               </View>
             ) : (
-              filteredStudents.map((item, idx) => (
+              filteredStudents.map((student, idx) => (
                 <SwipeableStudentRow
-                  key={item.id}
-                  item={item}
-                  badge={getBadgeStyle(item.status)}
+                  key={student.id}
+                  student={student}
                   accentColor={cardColor}
                   isLast={idx === filteredStudents.length - 1}
                   onSelectStatus={handleSetStatus}
@@ -1163,157 +1382,27 @@ export default function RosterScreen({
         </Animated.View>
       </Animated.ScrollView>
 
-      {/* SCREEN 4: DPA CONSENT & CAMERA/UPLOAD BIOMETRIC ENROLLMENT MODAL */}
-      <Modal
-        visible={dpaModalVisible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setDpaModalVisible(false)}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.modalOverlay}
-        >
-          <View style={styles.modalCard}>
-            <ScrollView bounces={false} keyboardShouldPersistTaps="handled">
-              <View style={styles.modalHeaderRow}>
-                <Text style={styles.modalTitle}>DPA Biometric Enrollment</Text>
-                <TouchableOpacity onPress={() => setDpaModalVisible(false)}>
-                  <Text style={styles.closeBtnText}>✕</Text>
-                </TouchableOpacity>
-              </View>
-              <Text style={[styles.modalSubtitle, { color: accentDark }]}>
-                Republic Act No. 10173 (Data Privacy Act of 2012) Compliance
-              </Text>
-
-              <Text style={styles.label}>Student Full Name</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. Dela Cruz, Juan"
-                placeholderTextColor="#94A3B8"
-                value={newStudentName}
-                onChangeText={setNewStudentName}
-              />
-
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <View style={{ flex: 0.62 }}>
-                  <Text style={styles.label}>DLSAU Student ID</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="2024-1099"
-                    placeholderTextColor="#94A3B8"
-                    value={newStudentId}
-                    onChangeText={setNewStudentId}
-                  />
-                </View>
-                <View style={{ flex: 0.34 }}>
-                  <Text style={styles.label}>Seat Code</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="B3"
-                    placeholderTextColor="#94A3B8"
-                    value={newStudentSeat}
-                    onChangeText={setNewStudentSeat}
-                  />
-                </View>
-              </View>
-
-              <Text style={styles.label}>Facial Biometric Source</Text>
-              <View style={styles.photoButtonsRow}>
-                <TouchableOpacity
-                  style={[
-                    styles.photoOptionBtn,
-                    captureSource === 'CAMERA' && {
-                      backgroundColor: mixColor(cardColor, '#FFFFFF', 0.88),
-                      borderColor: cardColor
-                    }
-                  ]}
-                  onPress={handleTakePhoto}
-                >
-                  <Text style={styles.photoOptionIcon}>📷</Text>
-                  <Text style={styles.photoOptionText}>Use Camera</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.photoOptionBtn,
-                    captureSource === 'GALLERY' && {
-                      backgroundColor: mixColor(cardColor, '#FFFFFF', 0.88),
-                      borderColor: cardColor
-                    }
-                  ]}
-                  onPress={handlePickImage}
-                >
-                  <Text style={styles.photoOptionIcon}>🖼️</Text>
-                  <Text style={styles.photoOptionText}>Upload Photo</Text>
-                </TouchableOpacity>
-              </View>
-
-              {capturedPhotoUri && (
-                <View
-                  style={[
-                    styles.previewBanner,
-                    {
-                      backgroundColor: mixColor(cardColor, '#FFFFFF', 0.88),
-                      borderColor: cardColor
-                    }
-                  ]}
-                >
-                  <Image
-                    source={{ uri: capturedPhotoUri }}
-                    style={[styles.previewThumb, { borderColor: cardColor }]}
-                  />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.biometricTitle}>
-                      ✓ 128-D MobileFaceNet Vector Ready
-                    </Text>
-                    <Text style={styles.biometricSub}>
-                      Source photo will be auto-purged immediately after encryption.
-                    </Text>
-                  </View>
-                </View>
-              )}
-
-              <TouchableOpacity
-                style={styles.dpaConsentBox}
-                onPress={() => setDpaAccepted(!dpaAccepted)}
-              >
-                <View
-                  style={[
-                    styles.checkbox,
-                    dpaAccepted && { backgroundColor: cardColor, borderColor: cardColor }
-                  ]}
-                >
-                  {dpaAccepted && <Text style={styles.checkmark}>✓</Text>}
-                </View>
-                <Text style={styles.dpaText}>
-                  I confirm the student has signed the RA 10173 Data Privacy Consent Form. Tingin stores only encrypted mathematical facial embeddings and immediately deletes raw camera images.
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.primaryBtn}
-                onPress={handleEnrollStudent}
-              >
-                <Text style={styles.primaryBtnText}>
-                  Complete Biometric Enrollment
-                </Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+      <BiometricEnrollmentModal
+        visible={enrollModalVisible}
+        onClose={() => setEnrollModalVisible(false)}
+        cardColor={cardColor}
+        onEnroll={handleEnrollStudent}
+      />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8F9FA' },
+// =============================================================================
+// 5. STYLES
+// =============================================================================
 
-  // Shared Glass Panel Surface
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: THEME.bg },
+
+  // Shared Glass Surface
   glassShadowWrap: {
     borderRadius: 20,
-    shadowColor: '#070B24',
+    shadowColor: THEME.navy,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.08,
     shadowRadius: 16,
@@ -1330,7 +1419,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.36)'
   },
 
-  // Top Bar
+  // Top Header
   topHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1350,7 +1439,7 @@ const styles = StyleSheet.create({
   doneBtnText: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#070B24',
+    color: THEME.navy,
     letterSpacing: -0.2
   },
   moreCircleBtn: {
@@ -1376,7 +1465,7 @@ const styles = StyleSheet.create({
     paddingBottom: 42
   },
 
-  // Glassmorphic Hero Card
+  // Hero Class Card
   heroCardShadow: {
     height: 198,
     borderRadius: 24,
@@ -1398,11 +1487,7 @@ const styles = StyleSheet.create({
     padding: 22,
     justifyContent: 'space-between'
   },
-  heroSchedRoom: {
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.1
-  },
+  heroSchedRoom: { fontSize: 13, fontWeight: '700', letterSpacing: 0.1 },
   heroBottomRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1415,13 +1500,10 @@ const styles = StyleSheet.create({
     letterSpacing: -0.6,
     paddingRight: 12
   },
-  heroStudents: {
-    fontSize: 16,
-    fontWeight: '700',
-    flexShrink: 0
-  },
+  heroStudents: { fontSize: 16, fontWeight: '700', flexShrink: 0 },
 
-  // Inline Glass Color Theme Panel
+  // Inline Color Theme Panel
+  themePanelWrap: { marginBottom: 16 },
   themePanelInner: { padding: 16 },
   themePanelHeader: {
     flexDirection: 'row',
@@ -1429,8 +1511,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12
   },
-  themePanelTitle: { fontSize: 14, fontWeight: '800', color: '#070B24' },
-  deleteLinkText: { fontSize: 13, fontWeight: '700', color: '#DC2626' },
+  themePanelTitle: { fontSize: 14, fontWeight: '800', color: THEME.navy },
+  deleteLinkText: { fontSize: 13, fontWeight: '700', color: THEME.danger },
   swatchRow: { paddingVertical: 4, paddingHorizontal: 2 },
   swatchCircle: {
     width: 34,
@@ -1460,40 +1542,30 @@ const styles = StyleSheet.create({
     borderWidth: 2.5,
     borderColor: 'transparent'
   },
-  shadeChipActive: { borderColor: '#070B24' },
+  shadeChipActive: { borderColor: THEME.navy },
 
-  // Glass Bento Grid
+  // Bento Grid
   bentoGrid: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 24
   },
-  bentoLeftCol: { flex: 0.485 },
+  bentoCol: { flex: 0.485 },
+  bentoSecondTile: { marginTop: 12 },
   bentoTileInner: { padding: 15 },
-  bentoRightCol: { flex: 0.485 },
   bentoRightInner: {
     flex: 1,
     padding: 15,
     justifyContent: 'space-between'
   },
-  bentoLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#334155',
-    marginBottom: 4
-  },
+  bentoLabel: { fontSize: 12, fontWeight: '700', color: '#334155', marginBottom: 4 },
   bentoBigVal: {
     fontSize: 26,
     fontWeight: '800',
-    color: '#070B24',
+    color: THEME.navy,
     letterSpacing: -0.7
   },
-  bentoSub: {
-    fontSize: 12,
-    color: '#475569',
-    fontWeight: '600',
-    marginTop: 2
-  },
+  bentoSub: { fontSize: 12, color: '#475569', fontWeight: '600', marginTop: 2 },
   miniBarsRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -1502,7 +1574,9 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingHorizontal: 2
   },
+  miniBarTrack: { width: 8, overflow: 'hidden', borderRadius: 4 },
   miniBar: { width: 8, borderRadius: 4 },
+  enrollBtnWrap: { alignSelf: 'flex-end' },
   roundActionBtn: {
     width: 62,
     height: 62,
@@ -1513,14 +1587,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 12,
-    shadowColor: '#070B24',
+    shadowColor: THEME.navy,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.22,
     shadowRadius: 10
   },
   roundActionBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
 
-  // Class List Section
+  // Class List Header & Search
   listHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1530,7 +1604,7 @@ const styles = StyleSheet.create({
   listSectionTitle: {
     fontSize: 21,
     fontWeight: '800',
-    color: '#070B24',
+    color: THEME.navy,
     letterSpacing: -0.4
   },
   filterPillsRow: { flexDirection: 'row' },
@@ -1552,20 +1626,20 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(220, 38, 38, 0.92)'
   },
   filterPillText: { fontSize: 11, fontWeight: '700', color: '#334155' },
+  filterPillTextActive: { color: '#FFFFFF' },
+  searchPanelWrap: { marginBottom: 12, borderRadius: 16 },
   searchInput: {
     color: '#0F172A',
     paddingVertical: 13,
     paddingHorizontal: 15,
     fontSize: 14
   },
+  listGroupWrap: { borderRadius: 22 },
   emptyListBox: { padding: 28, alignItems: 'center' },
   emptyListText: { fontSize: 14, color: '#475569', fontWeight: '600' },
 
-  // Swipeable Glass Row & Glassmorphic Present / Late / Absent Tray
-  swipeRowWrap: {
-    position: 'relative',
-    overflow: 'hidden'
-  },
+  // Swipeable Glass Rows & Action Capsules
+  swipeRowWrap: { position: 'relative', overflow: 'hidden' },
   rowDivider: {
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.55)'
@@ -1599,14 +1673,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center'
   },
-  glassActionTopSheen: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: '45%',
-    backgroundColor: 'rgba(255, 255, 255, 0.22)'
-  },
   glassActionText: {
     color: '#FFFFFF',
     fontSize: 12,
@@ -1634,10 +1700,11 @@ const styles = StyleSheet.create({
     marginRight: 12
   },
   studentAvatarText: { fontSize: 14, fontWeight: '800' },
-  studentName: { fontSize: 15, fontWeight: '800', color: '#070B24' },
+  studentInfoCol: { flex: 1, paddingRight: 10 },
+  studentName: { fontSize: 15, fontWeight: '800', color: THEME.navy },
   studentMeta: { fontSize: 12, color: '#475569', marginTop: 2, fontWeight: '500' },
-  studentConfidence: { fontSize: 11, color: '#64748B', marginTop: 2, fontWeight: '600' },
-  anomalyInlineText: { fontSize: 11, color: '#DC2626', marginTop: 2, fontWeight: '700' },
+  studentConfidence: { fontSize: 11, color: THEME.muted, marginTop: 2, fontWeight: '600' },
+  anomalyInlineText: { fontSize: 11, color: THEME.danger, marginTop: 2, fontWeight: '700' },
   rowRightCol: { alignItems: 'flex-end' },
   statusGlassOuter: {
     paddingHorizontal: 10,
@@ -1648,64 +1715,101 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.8)'
   },
   statusPillText: { fontSize: 11, fontWeight: '800' },
-  swipeCue: { fontSize: 10, color: '#64748B', marginTop: 4, fontWeight: '600' },
+  swipeCue: { fontSize: 10, color: THEME.muted, marginTop: 4, fontWeight: '600' },
 
-  // Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(7, 11, 36, 0.45)',
-    justifyContent: 'flex-end'
+  // Glass Biometric Enrollment Modal
+  modalOverlay: { flex: 1, justifyContent: 'flex-end' },
+  modalBackdropTint: { flex: 1, backgroundColor: 'rgba(7, 11, 36, 0.28)' },
+  glassModalShadow: {
+    marginHorizontal: 10,
+    marginBottom: Platform.OS === 'ios' ? 14 : 10,
+    borderRadius: 30,
+    shadowColor: THEME.navy,
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.22,
+    shadowRadius: 24,
+    elevation: 10
   },
-  modalCard: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 24,
-    paddingBottom: 36
+  glassModalClip: {
+    borderRadius: 30,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.85)'
+  },
+  glassModalTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255, 255, 255, 0.62)'
+  },
+  glassModalInner: {
+    paddingHorizontal: 22,
+    paddingTop: 12,
+    paddingBottom: 26,
+    maxHeight: SCREEN_H * 0.86
+  },
+  modalHandle: {
+    width: 42,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: 'rgba(7, 11, 36, 0.22)',
+    alignSelf: 'center',
+    marginBottom: 14
   },
   modalHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center'
   },
-  modalTitle: { fontSize: 22, fontWeight: '900', color: '#070B24' },
-  closeBtnText: { fontSize: 20, fontWeight: '800', color: '#64748B' },
+  modalTitle: { fontSize: 22, fontWeight: '900', color: THEME.navy },
+  modalClosePill: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.92)',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  closeBtnText: { fontSize: 16, fontWeight: '800', color: THEME.muted },
   modalSubtitle: { fontSize: 12, fontWeight: '700', marginBottom: 16, marginTop: 2 },
   label: { color: '#1E293B', fontSize: 13, marginBottom: 6, fontWeight: '700' },
-  input: {
-    backgroundColor: '#F8FAFC',
+  glassInput: {
+    backgroundColor: 'rgba(255, 255, 255, 0.62)',
     color: '#0F172A',
     padding: 14,
     borderRadius: 14,
-    marginBottom: 14,
-    borderWidth: 1.5,
-    borderColor: '#CBD5E1',
+    marginBottom: 13,
+    borderWidth: 1.4,
+    borderColor: 'rgba(255, 255, 255, 0.92)',
     fontSize: 14
   },
+  idSeatRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  idCol: { flex: 0.62 },
+  seatCol: { flex: 0.34 },
   photoButtonsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 14
   },
-  photoOptionBtn: {
-    flex: 0.48,
+  photoBtnCol: { flex: 0.48 },
+  glassPhotoOptionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: 'rgba(255, 255, 255, 0.6)',
     paddingVertical: 14,
     borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: '#CBD5E1'
+    borderWidth: 1.4,
+    borderColor: 'rgba(255, 255, 255, 0.92)'
   },
   photoOptionIcon: { fontSize: 16, marginRight: 8 },
-  photoOptionText: { fontSize: 14, fontWeight: '800', color: '#070B24' },
-  previewBanner: {
+  photoOptionText: { fontSize: 14, fontWeight: '800', color: THEME.navy },
+  glassPreviewBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 12,
-    borderRadius: 14,
-    borderWidth: 1.5,
+    borderRadius: 16,
+    borderWidth: 1.4,
     marginBottom: 14
   },
   previewThumb: {
@@ -1715,24 +1819,25 @@ const styles = StyleSheet.create({
     marginRight: 12,
     borderWidth: 1.5
   },
-  biometricTitle: { fontSize: 13, fontWeight: '800', color: '#070B24' },
+  previewTextCol: { flex: 1 },
+  biometricTitle: { fontSize: 13, fontWeight: '800', color: THEME.navy },
   biometricSub: { fontSize: 11, color: '#475569', marginTop: 2 },
-  dpaConsentBox: {
+  glassDpaBox: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: '#F8FAFC',
-    padding: 12,
-    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.56)',
+    padding: 13,
+    borderRadius: 14,
     marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0'
+    borderWidth: 1.2,
+    borderColor: 'rgba(255, 255, 255, 0.9)'
   },
   checkbox: {
     width: 22,
     height: 22,
     borderRadius: 6,
     borderWidth: 2,
-    borderColor: '#64748B',
+    borderColor: THEME.muted,
     marginRight: 10,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1740,11 +1845,13 @@ const styles = StyleSheet.create({
   },
   checkmark: { color: '#FFFFFF', fontWeight: '900', fontSize: 13 },
   dpaText: { flex: 1, fontSize: 12, color: '#475569', lineHeight: 18 },
-  primaryBtn: {
-    backgroundColor: '#070B24',
+  glassPrimaryBtn: {
+    backgroundColor: 'rgba(7, 11, 36, 0.92)',
     paddingVertical: 16,
     borderRadius: 16,
-    alignItems: 'center'
+    alignItems: 'center',
+    borderWidth: 1.2,
+    borderColor: 'rgba(255, 255, 255, 0.25)'
   },
   primaryBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' }
 });
