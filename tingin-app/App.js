@@ -4,6 +4,37 @@ import LoginScreen from './screens/LoginScreen';
 import DashboardScreen from './screens/DashboardScreen';
 import RosterScreen from './screens/RosterScreen';
 import HealthScreen from './screens/HealthScreen';
+import ProfileScreen from './screens/ProfileScreen';
+
+// =============================================================================
+// 1. CONSTANTS & INITIAL DATA
+// =============================================================================
+
+const DLSAU_EMAIL_DOMAIN = '@dlsau.edu.ph';
+
+const SCREENS = {
+  AUTH: 'AUTH',
+  DASHBOARD: 'DASHBOARD',
+  ROSTER: 'ROSTER',
+  HEALTH: 'HEALTH',
+  PROFILE: 'PROFILE'
+};
+
+const INITIAL_PROFILE = {
+  nickname: 'Sir Juan',
+  fullName: 'Prof. Juan Dela Cruz',
+  facultyId: 'FAC-2026-001',
+  academicRank: 'Assistant Professor',
+  college: 'CAST',
+  department: 'Computer Science',
+  officeLocation: 'Osmeña Hall Faculty Room',
+  consultationHours: 'TTH 10:30 AM - 12:00 PM',
+  term: '1st Trimester, AY 2026-2027',
+  avatarUri: null,
+  coverUri: null,
+  coverPreset: 'aurora',
+  cardMode: 'dark'
+};
 
 const INITIAL_COURSES = [
   {
@@ -41,11 +72,20 @@ const INITIAL_COURSES = [
   }
 ];
 
+// =============================================================================
+// 2. ROOT APPLICATION
+// =============================================================================
+
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState('AUTH'); // AUTH | DASHBOARD | ROSTER | HEALTH
-  const [courses, setCourses] = useState(INITIAL_COURSES);
+  // Navigation State
+  const [currentScreen, setCurrentScreen] = useState(SCREENS.AUTH);
   const [selectedCourseId, setSelectedCourseId] = useState(null);
 
+  // Domain State
+  const [professorProfile, setProfessorProfile] = useState(INITIAL_PROFILE);
+  const [courses, setCourses] = useState(INITIAL_COURSES);
+
+  // Auth Form State
   const [isSignUp, setIsSignUp] = useState(false);
   const [fullName, setFullName] = useState('');
   const [facultyId, setFacultyId] = useState('');
@@ -53,22 +93,36 @@ export default function App() {
   const [password, setPassword] = useState('********');
 
   const selectedCourse =
-    courses.find((c) => c.course_id === selectedCourseId) || courses[0] || null;
+    courses.find((course) => course.course_id === selectedCourseId) || courses[0] || null;
+
+  // ---------------------------------------------------------------------------
+  // Handlers
+  // ---------------------------------------------------------------------------
 
   const handleAuth = () => {
-    if (!email.toLowerCase().endsWith('@dlsau.edu.ph')) {
+    if (!email.trim().toLowerCase().endsWith(DLSAU_EMAIL_DOMAIN)) {
       Alert.alert(
         'Access Restricted',
-        'Professor-Exclusive System: Please use a valid @dlsau.edu.ph institutional email.'
+        `Professor-Exclusive System: Please use a valid ${DLSAU_EMAIL_DOMAIN} institutional email.`
       );
       return;
     }
-    setCurrentScreen('DASHBOARD');
+
+    if (isSignUp) {
+      setProfessorProfile((prev) => ({
+        ...prev,
+        fullName: fullName.trim() || prev.fullName,
+        nickname: fullName.trim() || prev.nickname,
+        facultyId: facultyId.trim() || prev.facultyId
+      }));
+    }
+
+    setCurrentScreen(SCREENS.DASHBOARD);
   };
 
   const handleOpenRoster = (course) => {
     setSelectedCourseId(course.course_id);
-    setCurrentScreen('ROSTER');
+    setCurrentScreen(SCREENS.ROSTER);
   };
 
   const handleAddCourse = (newCourse) => {
@@ -79,23 +133,65 @@ export default function App() {
     setCourses((prev) => prev.filter((item) => item.course_id !== courseId));
     if (selectedCourseId === courseId) {
       setSelectedCourseId(null);
-      setCurrentScreen('DASHBOARD');
+      setCurrentScreen(SCREENS.DASHBOARD);
     }
   };
 
   const handleUpdateCourseColor = (courseId, newColor, baseHex) => {
     setCourses((prev) =>
-      prev.map((c) =>
-        c.course_id === courseId
-          ? { ...c, card_color: newColor, card_base: baseHex || newColor }
-          : c
+      prev.map((course) =>
+        course.course_id === courseId
+          ? { ...course, card_color: newColor, card_base: baseHex || newColor }
+          : course
       )
     );
   };
 
-  return (
-    <>
-      {currentScreen === 'AUTH' && (
+  // ---------------------------------------------------------------------------
+  // Screen Router
+  // ---------------------------------------------------------------------------
+
+  switch (currentScreen) {
+    case SCREENS.DASHBOARD:
+      return (
+        <DashboardScreen
+          email={email}
+          fullName={professorProfile.nickname || fullName}
+          courses={courses}
+          onAddCourse={handleAddCourse}
+          onDeleteCourse={handleDeleteCourse}
+          setCurrentScreen={setCurrentScreen}
+          onOpenRoster={handleOpenRoster}
+        />
+      );
+
+    case SCREENS.ROSTER:
+      return (
+        <RosterScreen
+          course={selectedCourse}
+          onUpdateCourseColor={handleUpdateCourseColor}
+          onDeleteCourse={handleDeleteCourse}
+          setCurrentScreen={setCurrentScreen}
+        />
+      );
+
+    case SCREENS.PROFILE:
+      return (
+        <ProfileScreen
+          email={email}
+          profile={professorProfile}
+          courses={courses}
+          onUpdateProfile={setProfessorProfile}
+          setCurrentScreen={setCurrentScreen}
+        />
+      );
+
+    case SCREENS.HEALTH:
+      return <HealthScreen setCurrentScreen={setCurrentScreen} />;
+
+    case SCREENS.AUTH:
+    default:
+      return (
         <LoginScreen
           email={email}
           setEmail={setEmail}
@@ -109,29 +205,6 @@ export default function App() {
           setIsSignUp={setIsSignUp}
           handleAuth={handleAuth}
         />
-      )}
-      {currentScreen === 'DASHBOARD' && (
-        <DashboardScreen
-          email={email}
-          fullName={fullName}
-          courses={courses}
-          onAddCourse={handleAddCourse}
-          onDeleteCourse={handleDeleteCourse}
-          setCurrentScreen={setCurrentScreen}
-          onOpenRoster={handleOpenRoster}
-        />
-      )}
-      {currentScreen === 'ROSTER' && (
-        <RosterScreen
-          course={selectedCourse}
-          onUpdateCourseColor={handleUpdateCourseColor}
-          onDeleteCourse={handleDeleteCourse}
-          setCurrentScreen={setCurrentScreen}
-        />
-      )}
-      {currentScreen === 'HEALTH' && (
-        <HealthScreen setCurrentScreen={setCurrentScreen} />
-      )}
-    </>
-  );
+      );
+  }
 }

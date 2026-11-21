@@ -235,15 +235,24 @@ function GlassSheen({ id }) {
   );
 }
 
-function QuickDrawer({ fullName, email, onOpenHealth, onLogOut }) {
+function QuickDrawer({ fullName, email, onOpenProfile, onOpenHealth, onLogOut }) {
   return (
     <View style={styles.quickDrawerShadow}>
       <BlurView intensity={55} tint="light" style={styles.quickDrawerGlass}>
         <View style={styles.drawerProfileRow}>
-          <View>
-            <Text style={styles.drawerName}>{fullName || 'DLSAU Professor'}</Text>
-            <Text style={styles.drawerEmail}>{email}</Text>
-          </View>
+          <TouchableOpacity
+            style={styles.drawerIdentityCol}
+            activeOpacity={0.7}
+            onPress={onOpenProfile}
+          >
+            <Text style={styles.drawerName} numberOfLines={1}>
+              {fullName || 'DLSAU Professor'} ›
+            </Text>
+            <Text style={styles.drawerEmail} numberOfLines={1}>
+              {email}
+            </Text>
+          </TouchableOpacity>
+
           <View style={styles.drawerPills}>
             <TouchableOpacity style={styles.drawerPillBtn} onPress={onOpenHealth}>
               <Text style={styles.drawerPillText}>System Health</Text>
@@ -566,6 +575,7 @@ function AddClassModal({ visible, onClose, onSubmit }) {
     if (!visible) return;
 
     setShadeBase(null);
+    setFocusedField(null);
     backdropOpacity.setValue(0);
     sheetY.setValue(80);
     sheetScale.setValue(0.95);
@@ -591,15 +601,20 @@ function AddClassModal({ visible, onClose, onSubmit }) {
     ]).start();
   }, [visible]);
 
-  const updateField = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
-
-  const inputStyleFor = (fieldKey) => [
-    styles.glassInput,
-    focusedField === fieldKey && {
-      borderColor: form.color,
-      backgroundColor: 'rgba(255, 255, 255, 0.9)'
-    }
-  ];
+  const fieldProps = (key) => ({
+    value: form[key],
+    placeholderTextColor: THEME.muted,
+    onFocus: () => setFocusedField(key),
+    onBlur: () => setFocusedField(null),
+    onChangeText: (val) => setForm((prev) => ({ ...prev, [key]: val })),
+    style: [
+      styles.glassInput,
+      focusedField === key && {
+        borderColor: form.color,
+        backgroundColor: 'rgba(255, 255, 255, 0.9)'
+      }
+    ]
+  });
 
   const handleClose = () => {
     Animated.parallel([
@@ -700,63 +715,26 @@ function AddClassModal({ visible, onClose, onSubmit }) {
                 </Text>
 
                 <Text style={styles.label}>Course Code</Text>
-                <TextInput
-                  style={inputStyleFor('code')}
-                  placeholder="e.g. CS 309"
-                  placeholderTextColor={THEME.muted}
-                  value={form.code}
-                  onFocus={() => setFocusedField('code')}
-                  onBlur={() => setFocusedField(null)}
-                  onChangeText={(val) => updateField('code', val)}
-                />
+                <TextInput placeholder="e.g. CS 309" {...fieldProps('code')} />
 
                 <Text style={styles.label}>Course Name</Text>
-                <TextInput
-                  style={inputStyleFor('name')}
-                  placeholder="e.g. Human-Computer Interaction"
-                  placeholderTextColor={THEME.muted}
-                  value={form.name}
-                  onFocus={() => setFocusedField('name')}
-                  onBlur={() => setFocusedField(null)}
-                  onChangeText={(val) => updateField('name', val)}
-                />
+                <TextInput placeholder="e.g. Human-Computer Interaction" {...fieldProps('name')} />
 
                 <Text style={styles.label}>Schedule</Text>
-                <TextInput
-                  style={inputStyleFor('schedule')}
-                  placeholder="e.g. MWF 10:30 AM"
-                  placeholderTextColor={THEME.muted}
-                  value={form.schedule}
-                  onFocus={() => setFocusedField('schedule')}
-                  onBlur={() => setFocusedField(null)}
-                  onChangeText={(val) => updateField('schedule', val)}
-                />
+                <TextInput placeholder="e.g. MWF 10:30 AM" {...fieldProps('schedule')} />
 
                 <View style={styles.rowInputs}>
                   <View style={styles.roomCol}>
                     <Text style={styles.label}>Room Assignment</Text>
-                    <TextInput
-                      style={inputStyleFor('room')}
-                      placeholder="Osmeña Rm 302"
-                      placeholderTextColor={THEME.muted}
-                      value={form.room}
-                      onFocus={() => setFocusedField('room')}
-                      onBlur={() => setFocusedField(null)}
-                      onChangeText={(val) => updateField('room', val)}
-                    />
+                    <TextInput placeholder="Osmeña Rm 302" {...fieldProps('room')} />
                   </View>
 
                   <View style={styles.enrolledCol}>
                     <Text style={styles.label}>Enrolled</Text>
                     <TextInput
-                      style={inputStyleFor('enrolled')}
                       placeholder="35"
-                      placeholderTextColor={THEME.muted}
                       keyboardType="number-pad"
-                      value={form.enrolled}
-                      onFocus={() => setFocusedField('enrolled')}
-                      onBlur={() => setFocusedField(null)}
-                      onChangeText={(val) => updateField('enrolled', val)}
+                      {...fieldProps('enrolled')}
                     />
                   </View>
                 </View>
@@ -868,15 +846,19 @@ export default function DashboardScreen({
     outputRange: ['0deg', '180deg']
   });
 
-  const handleToggleMenu = () => {
+  const setMenuOpen = (open) => {
     springLayout();
-    const next = !menuVisible;
-    setMenuVisible(next);
+    setMenuVisible(open);
     Animated.spring(chevronRot, {
-      toValue: next ? 1 : 0,
+      toValue: open ? 1 : 0,
       friction: 7,
       useNativeDriver: true
     }).start();
+  };
+
+  const navigateFromMenu = (screen) => {
+    setMenuOpen(false);
+    setCurrentScreen(screen);
   };
 
   const handleCreateCourse = (newCourse) => {
@@ -912,7 +894,7 @@ export default function DashboardScreen({
         <TouchableOpacity
           style={styles.titleDropdownBtn}
           activeOpacity={0.7}
-          onPress={handleToggleMenu}
+          onPress={() => setMenuOpen(!menuVisible)}
         >
           <Text style={styles.headerTitle}>Classes</Text>
           <Animated.Text
@@ -936,11 +918,9 @@ export default function DashboardScreen({
         <QuickDrawer
           fullName={fullName}
           email={email}
-          onOpenHealth={() => {
-            setMenuVisible(false);
-            setCurrentScreen('HEALTH');
-          }}
-          onLogOut={() => setCurrentScreen('AUTH')}
+          onOpenProfile={() => navigateFromMenu('PROFILE')}
+          onOpenHealth={() => navigateFromMenu('HEALTH')}
+          onLogOut={() => navigateFromMenu('AUTH')}
         />
       )}
 
@@ -1054,9 +1034,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center'
   },
+  drawerIdentityCol: { flex: 1, paddingRight: 10 },
   drawerName: { fontSize: 15, fontWeight: '800', color: THEME.navy },
   drawerEmail: { fontSize: 12, color: '#475569', marginTop: 2 },
-  drawerPills: { flexDirection: 'row' },
+  drawerPills: { flexDirection: 'row', flexShrink: 0 },
   drawerPillBtn: {
     backgroundColor: 'rgba(255, 255, 255, 0.7)',
     paddingVertical: 8,
