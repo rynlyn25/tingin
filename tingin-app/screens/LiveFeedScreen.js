@@ -353,8 +353,10 @@ function SeatPlanCheckModal({
   return (
     <Modal visible={visible} animationType="fade" transparent>
       <View style={styles.promptOverlay}>
-        <BlurView intensity={26} tint="dark" style={StyleSheet.absoluteFill} />
-        <GlassContainer style={styles.promptCard} intensity={76}>
+        <BlurView intensity={28} tint="dark" style={StyleSheet.absoluteFill} />
+        <View style={styles.promptCard}>
+          <BlurView intensity={85} tint="light" style={StyleSheet.absoluteFill} />
+          <View style={styles.promptSurfaceTint} />
           <View style={styles.promptInner}>
             <Text style={styles.promptBadge}>SAVED ROOM SEAT PLAN</Text>
             <Text style={styles.promptTitle}>
@@ -394,7 +396,7 @@ function SeatPlanCheckModal({
               </View>
             )}
           </View>
-        </GlassContainer>
+        </View>
       </View>
     </Modal>
   );
@@ -1430,28 +1432,44 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     paddingHorizontal: 20,
-    backgroundColor: 'rgba(7, 11, 36, 0.28)'
+    backgroundColor: 'rgba(7, 11, 36, 0.35)'
   },
-  promptCard: { borderRadius: 26 },
+  promptCard: {
+    width: '100%',
+    borderRadius: 26,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.94)',
+    backgroundColor: 'rgba(255, 255, 255, 0.92)',
+    shadowColor: THEME.navy,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    elevation: 8
+  },
+  promptSurfaceTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255, 255, 255, 0.85)'
+  },
   promptInner: { padding: 20 },
   promptBadge: {
     fontSize: 10,
     fontWeight: '800',
-    color: THEME.muted,
+    color: '#475569',
     letterSpacing: 0.7,
     marginBottom: 4
   },
   promptTitle: { fontSize: 20, fontWeight: '900', color: THEME.navy },
-  promptSub: { fontSize: 13, color: '#475569', marginTop: 6, lineHeight: 18 },
+  promptSub: { fontSize: 13, color: '#334155', marginTop: 6, lineHeight: 18 },
   promptActions: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 18 },
   promptSecondaryBtn: {
     flex: 0.47,
     paddingVertical: 12,
     borderRadius: 14,
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.78)',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderWidth: 1,
-    borderColor: 'rgba(7, 11, 36, 0.15)'
+    borderColor: 'rgba(7, 11, 36, 0.18)'
   },
   promptSecondaryText: { fontSize: 12, fontWeight: '800', color: THEME.navy },
   promptPrimaryBtn: {
