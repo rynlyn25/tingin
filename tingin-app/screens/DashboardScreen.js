@@ -78,6 +78,7 @@ const INITIAL_FORM = {
   schedule: '',
   room: '',
   enrolled: '',
+  seatCapacity: '40',
   color: THEME.defaultCardColor,
   base: THEME.defaultCardColor
 };
@@ -327,6 +328,7 @@ function ClassDeckCard({
   scrollY,
   onToggleExpand,
   onOpenRoster,
+  onOpenLiveFeed,
   onDelete
 }) {
   const cardBg = course.card_color || THEME.defaultCardColor;
@@ -431,12 +433,7 @@ function ClassDeckCard({
 
                   <TouchableOpacity
                     style={[styles.actionLightPill, { backgroundColor: theme.softPillBg }]}
-                    onPress={() =>
-                      Alert.alert(
-                        course.course_code,
-                        `Starting YOLOv8 live attendance feed for ${course.course_name}.`
-                      )
-                    }
+                    onPress={() => onOpenLiveFeed && onOpenLiveFeed(course)}
                   >
                     <Text style={[styles.actionLightPillText, { color: theme.ink }]}>
                       Live Feed
@@ -632,7 +629,7 @@ function AddClassModal({ visible, onClose, onSubmit }) {
   };
 
   const handleSave = () => {
-    const { code, name, schedule, room, enrolled, color, base } = form;
+    const { code, name, schedule, room, enrolled, seatCapacity, color, base } = form;
     if (!code.trim() || !name.trim() || !schedule.trim() || !room.trim()) {
       Alert.alert('Missing Details', 'Please fill in the course code, name, schedule, and room.');
       return;
@@ -645,6 +642,7 @@ function AddClassModal({ visible, onClose, onSubmit }) {
       schedule: schedule.trim(),
       room: room.trim(),
       enrolled_count: parseInt(enrolled, 10) || 0,
+      seat_capacity: Math.max(1, parseInt(seatCapacity, 10) || 40),
       pending_anomalies: 0,
       card_color: color,
       card_base: base
@@ -739,6 +737,13 @@ function AddClassModal({ visible, onClose, onSubmit }) {
                   </View>
                 </View>
 
+                <Text style={styles.label}>Classroom Seat Count</Text>
+                <TextInput
+                  placeholder="40"
+                  keyboardType="number-pad"
+                  {...fieldProps('seatCapacity')}
+                />
+
                 <Text style={styles.label}>Card Color Theme</Text>
                 <ScrollView
                   horizontal
@@ -829,7 +834,8 @@ export default function DashboardScreen({
   onAddCourse,
   onDeleteCourse,
   setCurrentScreen,
-  onOpenRoster
+  onOpenRoster,
+  onOpenLiveFeed
 }) {
   const [selectedCardId, setSelectedCardId] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -948,6 +954,7 @@ export default function DashboardScreen({
               );
             }}
             onOpenRoster={onOpenRoster}
+            onOpenLiveFeed={onOpenLiveFeed}
             onDelete={handleDeleteCourse}
           />
         ))}
