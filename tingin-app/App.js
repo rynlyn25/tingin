@@ -12,7 +12,7 @@ import LiveFeedScreen from './screens/LiveFeedScreen';
 // =============================================================================
 
 const DLSAU_EMAIL_DOMAIN = '@dlsau.edu.ph';
-const DEFAULT_COLS_PER_ROW = 8;
+const DEFAULT_COLS_PER_ROW = 6;
 
 const SCREENS = {
   AUTH: 'AUTH',
@@ -101,6 +101,16 @@ const INITIAL_ROOM_LAYOUTS = {
   }
 };
 
+function buildDefaultSectionsForCourse(course) {
+  const room = course?.room || 'Osmeña Rm 302';
+  const baseCount = course?.enrolled_count ?? 35;
+  return [
+    { section_id: 'sec-a', section_name: 'Section 3A', room, enrolled_count: baseCount },
+    { section_id: 'sec-b', section_name: 'Section 3B', room, enrolled_count: Math.max(20, baseCount - 2) },
+    { section_id: 'sec-c', section_name: 'Section 3C', room, enrolled_count: Math.max(20, baseCount + 1) }
+  ];
+}
+
 // =============================================================================
 // 2. ROOT APPLICATION
 // =============================================================================
@@ -112,6 +122,7 @@ export default function App() {
   const [professorProfile, setProfessorProfile] = useState(INITIAL_PROFILE);
   const [courses, setCourses] = useState(INITIAL_COURSES);
   const [roomLayouts, setRoomLayouts] = useState(INITIAL_ROOM_LAYOUTS);
+  const [sectionsByCourse, setSectionsByCourse] = useState({});
   const [sessionsByCourse, setSessionsByCourse] = useState({});
 
   // Auth Form State
@@ -123,6 +134,14 @@ export default function App() {
 
   const selectedCourse =
     courses.find((course) => course.course_id === selectedCourseId) || courses[0] || null;
+
+  const getSectionsForCourse = (course) => {
+    if (!course) return [];
+    const saved = sectionsByCourse[course.course_id];
+    if (Array.isArray(saved) && saved.length > 0) return saved;
+    if (Array.isArray(course.sections) && course.sections.length > 0) return course.sections;
+    return buildDefaultSectionsForCourse(course);
+  };
 
   // ---------------------------------------------------------------------------
   // Handlers
@@ -184,6 +203,11 @@ export default function App() {
 
   const handleDeleteCourse = (courseId) => {
     setCourses((prev) => prev.filter((item) => item.course_id !== courseId));
+    setSectionsByCourse((prev) => {
+      const next = { ...prev };
+      delete next[courseId];
+      return next;
+    });
     setSessionsByCourse((prev) => {
       const next = { ...prev };
       delete next[courseId];
@@ -204,6 +228,26 @@ export default function App() {
           : course
       )
     );
+  };
+
+  const handleUpdateSections = (courseId, nextSections) => {
+    if (!courseId || !Array.isArray(nextSections)) return;
+
+    setSectionsByCourse((prev) => ({
+      ...prev,
+      [courseId]: nextSections
+    }));
+
+    const primarySection = nextSections[0];
+    if (primarySection?.enrolled_count !== undefined) {
+      setCourses((prev) =>
+        prev.map((course) =>
+          course.course_id === courseId
+            ? { ...course, enrolled_count: primarySection.enrolled_count }
+            : course
+        )
+      );
+    }
   };
 
   const handleSaveRoomLayout = (roomName, layoutConfig) => {
@@ -257,6 +301,8 @@ export default function App() {
       return (
         <RosterScreen
           course={selectedCourse}
+          sections={getSectionsForCourse(selectedCourse)}
+          onUpdateSections={handleUpdateSections}
           onUpdateCourseColor={handleUpdateCourseColor}
           onDeleteCourse={handleDeleteCourse}
           setCurrentScreen={setCurrentScreen}
@@ -267,6 +313,8 @@ export default function App() {
       return (
         <LiveFeedScreen
           course={selectedCourse}
+          sections={getSectionsForCourse(selectedCourse)}
+          onUpdateSections={handleUpdateSections}
           savedRoomLayout={
             selectedCourse ? roomLayouts[normalizeRoomKey(selectedCourse.room)] : null
           }

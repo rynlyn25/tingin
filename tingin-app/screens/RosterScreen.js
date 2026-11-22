@@ -29,6 +29,7 @@ import Svg, {
   Circle
 } from 'react-native-svg';
 import * as ImagePicker from 'expo-image-picker';
+import LiquidSectionBar from '../components/LiquidSectionBar';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -74,6 +75,12 @@ const SWIPE_ACTIONS = [
 
 const SWIPE_ACTION_WIDTH = 228;
 const MINI_WEEK_BARS = [0.85, 0.55, 0.4, 0.72, 0.95, 0.45, 0.8];
+
+const DEFAULT_SECTIONS = [
+  { section_id: 'sec-a', section_name: 'Section 3A' },
+  { section_id: 'sec-b', section_name: 'Section 3B' },
+  { section_id: 'sec-c', section_name: 'Section 3C' }
+];
 
 const INITIAL_ENROLL_FORM = {
   name: '',
@@ -237,6 +244,16 @@ const getInitials = (name) =>
     .join('')
     .toUpperCase();
 
+function getSectionRoster(courseKey, sectionId, sectionOffset = 0) {
+  const baseList = INITIAL_STUDENTS[courseKey] || INITIAL_STUDENTS.CS301;
+  if (sectionOffset === 0) return baseList;
+  return baseList.map((stu, idx) => ({
+    ...stu,
+    id: `${stu.id}-${sectionId}`,
+    seat: `${String.fromCharCode(65 + ((idx + sectionOffset) % 5))}${(idx % 6) + 1}`
+  }));
+}
+
 // =============================================================================
 // 3. SUB-COMPONENTS
 // =============================================================================
@@ -343,6 +360,7 @@ function GlassPanel({ style, intensity = 58, children }) {
 
 function HeroClassCard({
   course,
+  sectionLabel,
   studentCount,
   cardColor,
   enterAnim,
@@ -367,8 +385,6 @@ function HeroClassCard({
     inputRange: [0, 1],
     outputRange: [24, 0]
   });
-
-  const displayCount = course?.enrolled_count ?? studentCount;
 
   const animatePress = (toValue) =>
     Animated.spring(pressScale, {
@@ -411,6 +427,7 @@ function HeroClassCard({
 
           <View style={styles.heroCardContent}>
             <Text style={[styles.heroSchedRoom, { color: cardTheme.inkSoft }]}>
+              {sectionLabel ? `${sectionLabel} • ` : ''}
               {course?.schedule || 'MWF 09:00 AM'} • {course?.room || 'Osmeña Rm 302'}
             </Text>
 
@@ -419,7 +436,7 @@ function HeroClassCard({
                 {course?.course_name || 'Software Engineering'}
               </Text>
               <Text style={[styles.heroStudents, { color: cardTheme.ink }]}>
-                {displayCount} {displayCount === 1 ? 'student' : 'students'}
+                {studentCount} {studentCount === 1 ? 'student' : 'students'}
               </Text>
             </View>
           </View>
@@ -539,7 +556,6 @@ function BentoMetricsGrid({
         }
       ]}
     >
-      {/* Left Column: Verified Attendance + Weekly Activity */}
       <View style={styles.bentoCol}>
         <GlassPanel intensity={60}>
           <View style={styles.bentoTileInner}>
@@ -587,7 +603,6 @@ function BentoMetricsGrid({
         </GlassPanel>
       </View>
 
-      {/* Right Column: Pending Anomalies + Circular Enroll Trigger */}
       <GlassPanel style={styles.bentoCol} intensity={60}>
         <View style={styles.bentoRightInner}>
           <TouchableOpacity activeOpacity={0.7} onPress={onToggleAnomalyFilter}>
@@ -711,7 +726,6 @@ function SwipeableStudentRow({ student, accentColor, isLast, onSelectStatus }) {
 
   return (
     <View style={[styles.swipeRowWrap, !isLast && styles.rowDivider]}>
-      {/* Glassmorphic Swipe Tray: Present / Late / Absent */}
       <Animated.View
         style={[
           styles.hiddenActionsContainer,
@@ -737,7 +751,6 @@ function SwipeableStudentRow({ student, accentColor, isLast, onSelectStatus }) {
         })}
       </Animated.View>
 
-      {/* Foreground Glass Row */}
       <Animated.View
         {...panResponder.panHandlers}
         style={[styles.studentRowInner, { transform: [{ translateX }] }]}
@@ -778,6 +791,115 @@ function SwipeableStudentRow({ student, accentColor, isLast, onSelectStatus }) {
         </View>
       </Animated.View>
     </View>
+  );
+}
+
+function RenameSectionModal({ visible, initialName, onCancel, onSave }) {
+  const [nameInput, setNameInput] = useState(initialName || '');
+
+  useEffect(() => {
+    setNameInput(initialName || '');
+  }, [initialName, visible]);
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onCancel}>
+      <View style={styles.renameOverlay}>
+        <BlurView intensity={26} tint="dark" style={StyleSheet.absoluteFill} />
+        <View style={styles.renameCard}>
+          <Text style={styles.renameTitle}>Rename Section</Text>
+          <TextInput
+            value={nameInput}
+            onChangeText={setNameInput}
+            placeholder="e.g. Section 3A"
+            placeholderTextColor={THEME.muted}
+            style={styles.renameInput}
+          />
+          <View style={styles.renameActions}>
+            <TouchableOpacity style={styles.renameCancelBtn} onPress={onCancel}>
+              <Text style={styles.renameCancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.renameSaveBtn}
+              onPress={() => {
+                const trimmed = nameInput.trim();
+                if (trimmed) onSave(trimmed);
+              }}
+            >
+              <Text style={styles.renameSaveText}>Save Name</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function SectionManagerModal({
+  visible,
+  activeSection,
+  sectionCount,
+  onAddSection,
+  onDeleteSection,
+  onClose
+}) {
+  const [newName, setNewName] = useState('');
+
+  useEffect(() => {
+    if (visible) setNewName('');
+  }, [visible]);
+
+  const handleCreate = () => {
+    const trimmed = newName.trim();
+    if (!trimmed) {
+      Alert.alert('Section Name Required', 'Enter a name like Section 3D.');
+      return;
+    }
+    onAddSection(trimmed);
+  };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.renameOverlay}>
+        <BlurView intensity={26} tint="dark" style={StyleSheet.absoluteFill} />
+        <View style={styles.renameCard}>
+          <Text style={styles.renameTitle}>
+            {activeSection?.section_name || 'Manage Sections'}
+          </Text>
+          <Text style={styles.managerSub}>
+            Add a new section to this subject or delete the active section.
+          </Text>
+
+          <TextInput
+            value={newName}
+            onChangeText={setNewName}
+            placeholder="New section name (e.g. Section 3D)"
+            placeholderTextColor={THEME.muted}
+            style={styles.renameInput}
+          />
+
+          <View style={styles.renameActions}>
+            <TouchableOpacity style={styles.renameCancelBtn} onPress={handleCreate}>
+              <Text style={styles.renameCancelText}>+ Add Section</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.promptDangerBtn,
+                sectionCount <= 1 && styles.promptBtnDisabled
+              ]}
+              disabled={sectionCount <= 1}
+              onPress={onDeleteSection}
+            >
+              <Text style={styles.renameSaveText}>Delete Section</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity style={styles.modalDismissLink} onPress={onClose}>
+            <Text style={styles.modalDismissText}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -938,7 +1060,6 @@ function BiometricEnrollmentModal({ visible, onClose, cardColor, onEnroll }) {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.modalOverlay}
       >
-        {/* Blurred Backdrop */}
         <Animated.View style={[StyleSheet.absoluteFill, { opacity: backdropOpacity }]}>
           <BlurView intensity={28} tint="dark" style={StyleSheet.absoluteFill} />
           <TouchableOpacity
@@ -948,7 +1069,6 @@ function BiometricEnrollmentModal({ visible, onClose, cardColor, onEnroll }) {
           />
         </Animated.View>
 
-        {/* Floating Frosted Glass Enrollment Sheet */}
         <Animated.View
           style={[
             styles.glassModalShadow,
@@ -1128,6 +1248,8 @@ function BiometricEnrollmentModal({ visible, onClose, cardColor, onEnroll }) {
 
 export default function RosterScreen({
   course,
+  sections: propSections,
+  onUpdateSections,
   onUpdateCourseColor,
   onDeleteCourse,
   setCurrentScreen
@@ -1136,15 +1258,43 @@ export default function RosterScreen({
   const cardColor = course?.card_color || THEME.defaultCardColor;
   const activeBase = course?.card_base || cardColor;
 
-  const [students, setStudents] = useState(
-    INITIAL_STUDENTS[courseKey] || INITIAL_STUDENTS.CS301
+  const [localSections, setLocalSections] = useState(
+    () => (Array.isArray(propSections) && propSections.length > 0 ? propSections : DEFAULT_SECTIONS)
+  );
+  const sections =
+    Array.isArray(propSections) && propSections.length > 0 ? propSections : localSections;
+
+  const [activeSectionId, setActiveSectionId] = useState(sections[0]?.section_id || 'sec-a');
+  const [renameModalVisible, setRenameModalVisible] = useState(false);
+  const [sectionModalVisible, setSectionModalVisible] = useState(false);
+
+  const activeSection =
+    sections.find((sec) => sec.section_id === activeSectionId) || sections[0];
+  const sectionIdx = Math.max(
+    0,
+    sections.findIndex((sec) => sec.section_id === activeSection?.section_id)
+  );
+
+  const [students, setStudents] = useState(() =>
+    getSectionRoster(courseKey, activeSection?.section_id || 'sec-a', sectionIdx)
   );
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterMode, setFilterMode] = useState('ALL'); // 'ALL' | 'ANOMALY'
+  const [filterMode, setFilterMode] = useState('ALL');
   const [showThemePanel, setShowThemePanel] = useState(false);
   const [enrollModalVisible, setEnrollModalVisible] = useState(false);
 
-  // Screen motion refs
+  useEffect(() => {
+    if (Array.isArray(propSections) && propSections.length > 0) {
+      setLocalSections(propSections);
+    }
+  }, [propSections]);
+
+  useEffect(() => {
+    setStudents(
+      getSectionRoster(courseKey, activeSection?.section_id || 'sec-a', sectionIdx)
+    );
+  }, [courseKey, activeSectionId]);
+
   const scrollY = useRef(new Animated.Value(0)).current;
   const heroEnter = useRef(new Animated.Value(0)).current;
   const bentoEnter = useRef(new Animated.Value(0)).current;
@@ -1176,6 +1326,38 @@ export default function RosterScreen({
       )
     ).start();
   }, []);
+
+  const syncSections = (updated, animate = true) => {
+    if (animate) springLayout();
+    setLocalSections(updated);
+    onUpdateSections && onUpdateSections(courseKey, updated);
+  };
+
+  const handleSaveSectionName = (newName) => {
+    const updated = sections.map((sec) =>
+      sec.section_id === activeSection?.section_id ? { ...sec, section_name: newName } : sec
+    );
+    syncSections(updated);
+    setRenameModalVisible(false);
+  };
+
+  const handleAddSection = (newName) => {
+    const nextSec = {
+      section_id: `sec-${Date.now()}`,
+      section_name: newName
+    };
+    syncSections([...sections, nextSec]);
+    setActiveSectionId(nextSec.section_id);
+    setSectionModalVisible(false);
+  };
+
+  const handleDeleteSection = () => {
+    if (sections.length <= 1 || !activeSection) return;
+    const remaining = sections.filter((sec) => sec.section_id !== activeSection.section_id);
+    syncSections(remaining);
+    setActiveSectionId(remaining[0].section_id);
+    setSectionModalVisible(false);
+  };
 
   const filteredStudents = students.filter((s) => {
     const query = searchQuery.toLowerCase();
@@ -1237,6 +1419,22 @@ export default function RosterScreen({
     <SafeAreaView style={styles.container}>
       <CardAuraBackground color={cardColor} />
 
+      <RenameSectionModal
+        visible={renameModalVisible}
+        initialName={activeSection?.section_name}
+        onCancel={() => setRenameModalVisible(false)}
+        onSave={handleSaveSectionName}
+      />
+
+      <SectionManagerModal
+        visible={sectionModalVisible}
+        activeSection={activeSection}
+        sectionCount={sections.length}
+        onAddSection={handleAddSection}
+        onDeleteSection={handleDeleteSection}
+        onClose={() => setSectionModalVisible(false)}
+      />
+
       {/* Top Glass Header */}
       <View style={styles.topHeader}>
         <TouchableOpacity
@@ -1266,13 +1464,29 @@ export default function RosterScreen({
           { useNativeDriver: true }
         )}
       >
+        <LiquidSectionBar
+          sections={sections}
+          activeSectionId={activeSection?.section_id}
+          accentColor={cardColor}
+          onSelectSection={(sec) => {
+            springLayout();
+            setActiveSectionId(sec.section_id);
+          }}
+          onDoubleTapSection={(sec) => {
+            setActiveSectionId(sec.section_id);
+            setRenameModalVisible(true);
+          }}
+          onReorderSections={(nextSections) => syncSections(nextSections, false)}
+        />
+
         <HeroClassCard
           course={course}
+          sectionLabel={activeSection?.section_name}
           studentCount={students.length}
           cardColor={cardColor}
           enterAnim={heroEnter}
           scrollY={scrollY}
-          onPress={handleToggleThemePanel}
+          onPress={() => setSectionModalVisible(true)}
         />
 
         {showThemePanel && (
@@ -1464,6 +1678,66 @@ const styles = StyleSheet.create({
     paddingTop: 4,
     paddingBottom: 42
   },
+
+  // Rename / Section Manager Modal
+  renameOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 22,
+    backgroundColor: 'rgba(7, 11, 36, 0.35)'
+  },
+  renameCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.96)',
+    borderRadius: 22,
+    padding: 20,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF'
+  },
+  renameTitle: { fontSize: 18, fontWeight: '800', color: THEME.navy },
+  managerSub: { fontSize: 12, color: '#475569', marginTop: 4, lineHeight: 17 },
+  renameInput: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(7, 11, 36, 0.2)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    fontWeight: '700',
+    color: THEME.navy,
+    backgroundColor: '#FFFFFF'
+  },
+  renameActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16
+  },
+  renameCancelBtn: {
+    flex: 0.47,
+    paddingVertical: 11,
+    borderRadius: 12,
+    alignItems: 'center',
+    backgroundColor: '#E2E8F0'
+  },
+  renameCancelText: { fontSize: 12, fontWeight: '800', color: THEME.navy },
+  renameSaveBtn: {
+    flex: 0.49,
+    paddingVertical: 11,
+    borderRadius: 12,
+    alignItems: 'center',
+    backgroundColor: THEME.navy
+  },
+  renameSaveText: { fontSize: 12, fontWeight: '800', color: '#FFFFFF' },
+  promptDangerBtn: {
+    flex: 0.49,
+    paddingVertical: 11,
+    borderRadius: 12,
+    alignItems: 'center',
+    backgroundColor: THEME.danger
+  },
+  promptBtnDisabled: { opacity: 0.4 },
+  modalDismissLink: { alignItems: 'center', marginTop: 14 },
+  modalDismissText: { fontSize: 12, fontWeight: '800', color: '#475569' },
 
   // Hero Class Card
   heroCardShadow: {

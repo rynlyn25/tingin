@@ -27,6 +27,7 @@ import Svg, {
   Line
 } from 'react-native-svg';
 import * as ImagePicker from 'expo-image-picker';
+import LiquidSectionBar from '../components/LiquidSectionBar';
 
 let CameraView = null;
 let useCameraPermissions = null;
@@ -213,7 +214,23 @@ async function pickOrCapturePhoto(mode) {
   return null;
 }
 
-function buildClassroomSeats(enrolledCount = 35, seatCapacity = 40, colsPerRow = 8) {
+function resolveSections(course, propSections) {
+  if (Array.isArray(propSections) && propSections.length > 0) {
+    return propSections;
+  }
+  if (Array.isArray(course?.sections) && course.sections.length > 0) {
+    return course.sections;
+  }
+  const baseRoom = course?.room || 'Osmeña Rm 302';
+  const baseEnrolled = course?.enrolled_count ?? 35;
+  return [
+    { section_id: 'sec-a', section_name: 'Section 3A', room: baseRoom, enrolled_count: baseEnrolled },
+    { section_id: 'sec-b', section_name: 'Section 3B', room: baseRoom, enrolled_count: Math.max(20, baseEnrolled - 2) },
+    { section_id: 'sec-c', section_name: 'Section 3C', room: baseRoom, enrolled_count: Math.max(20, baseEnrolled + 1) }
+  ];
+}
+
+function buildClassroomSeats(enrolledCount = 35, seatCapacity = 40, colsPerRow = 6, sectionOffset = 0) {
   const safeCapacity = Math.max(1, seatCapacity);
   const safeCols = Math.max(2, colsPerRow);
   const rowCount = Math.ceil(safeCapacity / safeCols);
@@ -252,12 +269,12 @@ function buildClassroomSeats(enrolledCount = 35, seatCapacity = 40, colsPerRow =
       };
     }
 
-    const template = SAMPLE_STUDENTS[idx % SAMPLE_STUDENTS.length];
+    const template = SAMPLE_STUDENTS[(idx + sectionOffset) % SAMPLE_STUDENTS.length];
 
     return {
       seat: seatCode,
       row: seatCode[0],
-      studentId: `2024-${1001 + idx}`,
+      studentId: `2024-${1001 + idx + sectionOffset * 50}`,
       studentName: idx < SAMPLE_STUDENTS.length ? template.name : `Student #${idx + 1}`,
       status: isOverflow
         ? 'ANOMALY'
@@ -402,14 +419,135 @@ function SeatPlanCheckModal({
   );
 }
 
+function RenameSectionModal({ visible, initialName, onCancel, onSave }) {
+  const [nameInput, setNameInput] = useState(initialName || '');
+
+  useEffect(() => {
+    setNameInput(initialName || '');
+  }, [initialName, visible]);
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onCancel}>
+      <View style={styles.promptOverlay}>
+        <BlurView intensity={28} tint="dark" style={StyleSheet.absoluteFill} />
+        <View style={styles.promptCard}>
+          <BlurView intensity={85} tint="light" style={StyleSheet.absoluteFill} />
+          <View style={styles.promptSurfaceTint} />
+          <View style={styles.promptInner}>
+            <Text style={styles.promptBadge}>SECTION LABEL</Text>
+            <Text style={styles.promptTitle}>Rename Section</Text>
+            <TextInput
+              value={nameInput}
+              onChangeText={setNameInput}
+              placeholder="e.g. BSCS 3A - Morning"
+              placeholderTextColor={THEME.muted}
+              style={styles.renameInput}
+            />
+            <View style={styles.promptActions}>
+              <TouchableOpacity style={styles.promptSecondaryBtn} onPress={onCancel}>
+                <Text style={styles.promptSecondaryText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.promptPrimaryBtn}
+                onPress={() => {
+                  const trimmed = nameInput.trim();
+                  if (trimmed) onSave(trimmed);
+                }}
+              >
+                <Text style={styles.promptPrimaryText}>Save Name</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function SectionManagerModal({
+  visible,
+  activeSection,
+  sectionCount,
+  onAddSection,
+  onDeleteSection,
+  onClose
+}) {
+  const [newName, setNewName] = useState('');
+
+  useEffect(() => {
+    if (visible) setNewName('');
+  }, [visible]);
+
+  const handleCreate = () => {
+    const trimmed = newName.trim();
+    if (!trimmed) {
+      Alert.alert('Section Name Required', 'Enter a name like Section 3D.');
+      return;
+    }
+    onAddSection(trimmed);
+  };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.promptOverlay}>
+        <BlurView intensity={28} tint="dark" style={StyleSheet.absoluteFill} />
+        <View style={styles.promptCard}>
+          <BlurView intensity={85} tint="light" style={StyleSheet.absoluteFill} />
+          <View style={styles.promptSurfaceTint} />
+          <View style={styles.promptInner}>
+            <Text style={styles.promptBadge}>MANAGE SECTIONS</Text>
+            <Text style={styles.promptTitle}>
+              {activeSection?.section_name || 'Current Section'}
+            </Text>
+            <Text style={styles.promptSub}>
+              Add a new section to this subject or delete the active section.
+            </Text>
+
+            <TextInput
+              value={newName}
+              onChangeText={setNewName}
+              placeholder="New section name (e.g. Section 3D)"
+              placeholderTextColor={THEME.muted}
+              style={styles.renameInput}
+            />
+
+            <View style={styles.promptActions}>
+              <TouchableOpacity style={styles.promptSecondaryBtn} onPress={handleCreate}>
+                <Text style={styles.promptSecondaryText}>+ Add Section</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.promptDangerBtn,
+                  sectionCount <= 1 && styles.promptBtnDisabled
+                ]}
+                disabled={sectionCount <= 1}
+                onPress={onDeleteSection}
+              >
+                <Text style={styles.promptPrimaryText}>Delete Section</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity style={styles.modalDismissLink} onPress={onClose}>
+              <Text style={styles.modalDismissText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function CameraHeaderCard({
   course,
+  sectionLabel,
   enrolledCount,
   seatCapacity,
   cardColor,
   sessionActive,
   streamSource,
-  onSelectSource
+  onSelectSource,
+  onPressCard
 }) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const accentDark = mixColor(cardColor, '#000000', 0.35);
@@ -442,7 +580,11 @@ function CameraHeaderCard({
   const scheduleText = course?.schedule || 'MWF 09:00 AM';
 
   return (
-    <View style={[styles.camCardShadow, { shadowColor: cardColor }]}>
+    <TouchableOpacity
+      activeOpacity={0.95}
+      onPress={onPressCard}
+      style={[styles.camCardShadow, { shadowColor: cardColor }]}
+    >
       <View style={styles.camCardClip}>
         <BlurView intensity={65} tint="light" style={StyleSheet.absoluteFill} />
         <View style={[StyleSheet.absoluteFill, { backgroundColor: hexToRgba(cardColor, 0.72) }]} />
@@ -485,6 +627,7 @@ function CameraHeaderCard({
           </Text>
 
           <Text style={[styles.camMetaSub, { color: inkSoft }]}>
+            {sectionLabel ? `${sectionLabel} • ` : ''}
             {roomName} • {seatCapacity} Seats ({enrolledCount} Enrolled)
           </Text>
 
@@ -501,10 +644,7 @@ function CameraHeaderCard({
                   key={option.key}
                   activeOpacity={0.85}
                   onPress={() => onSelectSource(option.key)}
-                  style={[
-                    styles.sourceOptionBtn,
-                    selected && styles.sourceOptionBtnActive
-                  ]}
+                  style={[styles.sourceOptionBtn, selected && styles.sourceOptionBtnActive]}
                 >
                   <Text
                     style={[
@@ -527,7 +667,7 @@ function CameraHeaderCard({
           </View>
         </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -732,35 +872,19 @@ function SeatPlanSetupCard({
 
         <View style={styles.modeSwitchRow}>
           <TouchableOpacity
-            style={[
-              styles.modeSwitchBtn,
-              captureMode === 'PHOTO' && styles.modeSwitchBtnActive
-            ]}
+            style={[styles.modeSwitchBtn, captureMode === 'PHOTO' && styles.modeSwitchBtnActive]}
             onPress={() => onChangeMode('PHOTO')}
           >
-            <Text
-              style={[
-                styles.modeSwitchText,
-                captureMode === 'PHOTO' && styles.modeSwitchTextActive
-              ]}
-            >
+            <Text style={[styles.modeSwitchText, captureMode === 'PHOTO' && styles.modeSwitchTextActive]}>
               Room Photo Scan
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[
-              styles.modeSwitchBtn,
-              captureMode === 'ROW_LAB' && styles.modeSwitchBtnActive
-            ]}
+            style={[styles.modeSwitchBtn, captureMode === 'ROW_LAB' && styles.modeSwitchBtnActive]}
             onPress={() => onChangeMode('ROW_LAB')}
           >
-            <Text
-              style={[
-                styles.modeSwitchText,
-                captureMode === 'ROW_LAB' && styles.modeSwitchTextActive
-              ]}
-            >
+            <Text style={[styles.modeSwitchText, captureMode === 'ROW_LAB' && styles.modeSwitchTextActive]}>
               Lab Row-by-Row
             </Text>
           </TouchableOpacity>
@@ -804,12 +928,7 @@ function SeatPlanSetupCard({
                     ]}
                     onPress={() => onSelectLabRow(rowLetter)}
                   >
-                    <Text
-                      style={[
-                        styles.rowChipText,
-                        selected && { color: '#FFFFFF' }
-                      ]}
-                    >
+                    <Text style={[styles.rowChipText, selected && { color: '#FFFFFF' }]}>
                       Row {rowLetter} {done ? '✓' : ''}
                     </Text>
                   </TouchableOpacity>
@@ -841,34 +960,100 @@ function SeatPlanSetupCard({
   );
 }
 
-function SeatTile({ item, isSelected, onPress }) {
-  const stateStyle = SEAT_STATES[item.status] || SEAT_STATES.EMPTY;
+function ClassroomDiagramBoard({
+  seats,
+  selectedSeatCode,
+  colsPerRow = 6,
+  onSelectSeat
+}) {
+  const rows = [];
+  for (let i = 0; i < seats.length; i += colsPerRow) {
+    rows.push(seats.slice(i, i + colsPerRow));
+  }
 
   return (
-    <TouchableOpacity
-      activeOpacity={0.82}
-      onPress={() => onPress(item)}
-      style={[
-        styles.seatTile,
-        {
-          backgroundColor: stateStyle.tint,
-          borderColor: isSelected ? THEME.navy : stateStyle.border
-        },
-        isSelected && styles.seatTileSelected
-      ]}
-    >
-      <View style={styles.seatTileTop}>
-        <Text style={styles.seatCode}>{item.seat}</Text>
-        <View style={[styles.seatStatusDot, { backgroundColor: stateStyle.text }]} />
-      </View>
+    <GlassContainer style={styles.diagramOuter} intensity={64}>
+      <View style={styles.diagramRoomBox}>
+        <View style={styles.diagramTopWall}>
+          <View style={styles.teacherDeskBox}>
+            <View style={styles.teacherChairCap} />
+            <Text style={styles.teacherDeskLabel}>Teacher Desk</Text>
+          </View>
 
-      <Text style={styles.seatStudentName} numberOfLines={1}>
-        {item.studentName}
-      </Text>
-      <Text style={[styles.seatStatusLabel, { color: stateStyle.text }]}>
-        {item.isOverflow ? 'Overflow' : stateStyle.label}
-      </Text>
-    </TouchableOpacity>
+          <View style={styles.whiteboardBar}>
+            <Text style={styles.whiteboardLabel}>Whiteboard</Text>
+          </View>
+
+          <View style={styles.topWallSpacer} />
+        </View>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.diagramRowsScroll}
+        >
+          <View style={styles.diagramRowsStack}>
+            {rows.map((rowSeats, rIdx) => (
+              <View key={`row-${rIdx}`} style={styles.diagramDeskRow}>
+                {rowSeats.map((item) => {
+                  const stateStyle = SEAT_STATES[item.status] || SEAT_STATES.EMPTY;
+                  const isSelected = item.seat === selectedSeatCode;
+                  const displayLabel =
+                    item.studentName && item.studentName !== 'Open Seat'
+                      ? item.studentName.split(',')[0]
+                      : item.seat;
+
+                  return (
+                    <TouchableOpacity
+                      key={item.seat}
+                      activeOpacity={0.82}
+                      onPress={() => onSelectSeat(item)}
+                      style={styles.deskUnitCol}
+                    >
+                      <View
+                        style={[
+                          styles.deskTopBox,
+                          {
+                            backgroundColor: stateStyle.tint,
+                            borderColor: isSelected ? THEME.navy : '#334155'
+                          },
+                          isSelected && styles.deskTopSelected
+                        ]}
+                      >
+                        <Text style={styles.deskNameText} numberOfLines={1}>
+                          {displayLabel}
+                        </Text>
+                      </View>
+                      <View
+                        style={[
+                          styles.deskChairBar,
+                          { borderColor: isSelected ? THEME.navy : '#475569' }
+                        ]}
+                      />
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ))}
+          </View>
+        </ScrollView>
+
+        <View style={styles.diagramBottomWall}>
+          <View style={styles.cubbiesRow}>
+            {[0, 1, 2].map((idx) => (
+              <View key={idx} style={styles.cubbySlot}>
+                <Text style={styles.cubbyV}>V</Text>
+              </View>
+            ))}
+          </View>
+
+          <View style={styles.doorBlock}>
+            <View style={styles.doorArc} />
+            <View style={styles.doorLeaf} />
+          </View>
+        </View>
+      </View>
+    </GlassContainer>
   );
 }
 
@@ -968,23 +1153,47 @@ function AttendanceFeedSection({ feed, cardColor }) {
 
 export default function LiveFeedScreen({
   course,
+  sections: propSections,
+  onUpdateSections,
   savedRoomLayout,
   sessionState,
   onSaveRoomLayout,
   onUpdateSession,
   setCurrentScreen
 }) {
+  const [localSections, setLocalSections] = useState(() =>
+    resolveSections(course, propSections)
+  );
+  const sections =
+    Array.isArray(propSections) && propSections.length > 0 ? propSections : localSections;
+  const hasMultipleSections = sections.length >= 2;
+
+  const [activeSectionId, setActiveSectionId] = useState(sections[0]?.section_id || 'sec-a');
+  const [renameModalVisible, setRenameModalVisible] = useState(false);
+  const [sectionModalVisible, setSectionModalVisible] = useState(false);
+
+  const activeSection =
+    sections.find((sec) => sec.section_id === activeSectionId) || sections[0];
+  const sectionIndex = Math.max(
+    0,
+    sections.findIndex((s) => s.section_id === activeSection?.section_id)
+  );
+
   const cardColor = course?.card_color || THEME.defaultCardColor;
-  const enrolledCount = course?.enrolled_count ?? 35;
-  const roomName = course?.room || 'Osmeña Rm 302';
+  const enrolledCount = hasMultipleSections
+    ? (activeSection?.enrolled_count ?? course?.enrolled_count ?? 35)
+    : (course?.enrolled_count ?? 35);
+  const roomName = hasMultipleSections
+    ? (activeSection?.room || course?.room || 'Osmeña Rm 302')
+    : (course?.room || 'Osmeña Rm 302');
 
   const initialCapacity = savedRoomLayout?.capacity || course?.seat_capacity || 40;
-  const colsPerRow = savedRoomLayout?.colsPerRow || 8;
+  const colsPerRow = savedRoomLayout?.colsPerRow || 6;
   const hasSavedLayout = Boolean(savedRoomLayout?.capacity);
 
   const [seatCapacityInput, setSeatCapacityInput] = useState(String(initialCapacity));
   const [seats, setSeats] = useState(
-    () => sessionState?.seats || buildClassroomSeats(enrolledCount, initialCapacity, colsPerRow)
+    () => sessionState?.seats || buildClassroomSeats(enrolledCount, initialCapacity, colsPerRow, sectionIndex)
   );
   const [feed, setFeed] = useState(() => sessionState?.feed || INITIAL_FEED);
   const [selectedSeatCode, setSelectedSeatCode] = useState(
@@ -995,7 +1204,7 @@ export default function LiveFeedScreen({
     () => sessionState?.streamSource || STREAM_SOURCES.WIFI.key
   );
   const [cameraFacing, setCameraFacing] = useState('back');
-  const [captureMode, setCaptureMode] = useState('PHOTO'); // 'PHOTO' | 'ROW_LAB'
+  const [captureMode, setCaptureMode] = useState('PHOTO');
   const [activeLabRow, setActiveLabRow] = useState('A');
   const [capturedRows, setCapturedRows] = useState(() => savedRoomLayout?.capturedRows || []);
 
@@ -1005,8 +1214,14 @@ export default function LiveFeedScreen({
   const numericCapacity = Math.max(1, parseInt(seatCapacityInput, 10) || 40);
 
   useEffect(() => {
+    if (Array.isArray(propSections) && propSections.length > 0) {
+      setLocalSections(propSections);
+    }
+  }, [propSections]);
+
+  useEffect(() => {
     const nextCap = savedRoomLayout?.capacity || course?.seat_capacity || 40;
-    const nextCols = savedRoomLayout?.colsPerRow || 8;
+    const nextCols = savedRoomLayout?.colsPerRow || 6;
 
     setSeatCapacityInput(String(nextCap));
     setCapturedRows(savedRoomLayout?.capturedRows || []);
@@ -1019,11 +1234,11 @@ export default function LiveFeedScreen({
       setSessionActive(Boolean(sessionState.sessionActive));
       setStreamSource(sessionState.streamSource || STREAM_SOURCES.WIFI.key);
     } else {
-      setSeats(buildClassroomSeats(enrolledCount, nextCap, nextCols));
+      setSeats(buildClassroomSeats(enrolledCount, nextCap, nextCols, sectionIndex));
       setFeed(INITIAL_FEED);
       setSessionActive(false);
     }
-  }, [course?.course_id]);
+  }, [course?.course_id, activeSectionId]);
 
   useEffect(() => {
     if (!course?.course_id || !onUpdateSession) return;
@@ -1055,6 +1270,53 @@ export default function LiveFeedScreen({
     ]);
   };
 
+  const syncSections = (updated, animate = true) => {
+    if (animate) springLayout();
+    setLocalSections(updated);
+    onUpdateSections && onUpdateSections(course?.course_id, updated);
+  };
+
+  const handleSaveSectionName = (newName) => {
+    const updated = sections.map((sec) =>
+      sec.section_id === activeSection?.section_id ? { ...sec, section_name: newName } : sec
+    );
+    syncSections(updated);
+    setRenameModalVisible(false);
+    pushFeedEvent(
+      'SEC',
+      `Renamed Section to ${newName}`,
+      `Updated for ${course?.course_code || 'Course'}`,
+      'EMPTY'
+    );
+  };
+
+  const handleAddSection = (name) => {
+    const nextSec = {
+      section_id: `sec-${Date.now()}`,
+      section_name: name,
+      room: course?.room || 'Osmeña Rm 302',
+      enrolled_count: course?.enrolled_count ?? 35
+    };
+    syncSections([...sections, nextSec]);
+    setActiveSectionId(nextSec.section_id);
+    setSectionModalVisible(false);
+    pushFeedEvent('SEC', `Added ${name}`, `New section for ${course?.course_code || 'Course'}`, 'PRESENT');
+  };
+
+  const handleDeleteSection = () => {
+    if (sections.length <= 1 || !activeSection) return;
+    const remaining = sections.filter((sec) => sec.section_id !== activeSection.section_id);
+    syncSections(remaining);
+    setActiveSectionId(remaining[0].section_id);
+    setSectionModalVisible(false);
+    pushFeedEvent(
+      'SEC',
+      `Deleted ${activeSection.section_name}`,
+      `Switched to ${remaining[0].section_name}`,
+      'EMPTY'
+    );
+  };
+
   const applyCapacity = (rawValue) => {
     const cleaned = rawValue.replace(/[^0-9]/g, '');
     setSeatCapacityInput(cleaned);
@@ -1064,7 +1326,7 @@ export default function LiveFeedScreen({
 
     const clamped = Math.min(120, parsed);
     springLayout();
-    setSeats(buildClassroomSeats(enrolledCount, clamped, colsPerRow));
+    setSeats(buildClassroomSeats(enrolledCount, clamped, colsPerRow, sectionIndex));
     onSaveRoomLayout &&
       onSaveRoomLayout(roomName, {
         ...(savedRoomLayout || {}),
@@ -1079,7 +1341,7 @@ export default function LiveFeedScreen({
     const nextCap = Math.min(120, Math.max(1, numericCapacity + delta));
     setSeatCapacityInput(String(nextCap));
     springLayout();
-    setSeats(buildClassroomSeats(enrolledCount, nextCap, colsPerRow));
+    setSeats(buildClassroomSeats(enrolledCount, nextCap, colsPerRow, sectionIndex));
     onSaveRoomLayout &&
       onSaveRoomLayout(roomName, {
         ...(savedRoomLayout || {}),
@@ -1095,7 +1357,7 @@ export default function LiveFeedScreen({
     if (!uri) return;
 
     springLayout();
-    setSeats(buildClassroomSeats(enrolledCount, numericCapacity, colsPerRow));
+    setSeats(buildClassroomSeats(enrolledCount, numericCapacity, colsPerRow, sectionIndex));
     onSaveRoomLayout &&
       onSaveRoomLayout(roomName, {
         ...(savedRoomLayout || {}),
@@ -1237,6 +1499,22 @@ export default function LiveFeedScreen({
         }}
       />
 
+      <RenameSectionModal
+        visible={renameModalVisible}
+        initialName={activeSection?.section_name}
+        onCancel={() => setRenameModalVisible(false)}
+        onSave={handleSaveSectionName}
+      />
+
+      <SectionManagerModal
+        visible={sectionModalVisible}
+        activeSection={activeSection}
+        sectionCount={sections.length}
+        onAddSection={handleAddSection}
+        onDeleteSection={handleDeleteSection}
+        onClose={() => setSectionModalVisible(false)}
+      />
+
       {/* Top Glass Header */}
       <View style={styles.topHeader}>
         <TouchableOpacity
@@ -1262,14 +1540,31 @@ export default function LiveFeedScreen({
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
+        <LiquidSectionBar
+          sections={sections}
+          activeSectionId={activeSection?.section_id}
+          accentColor={cardColor}
+          onSelectSection={(sec) => {
+            springLayout();
+            setActiveSectionId(sec.section_id);
+          }}
+          onDoubleTapSection={(sec) => {
+            setActiveSectionId(sec.section_id);
+            setRenameModalVisible(true);
+          }}
+          onReorderSections={(nextSections) => syncSections(nextSections, false)}
+        />
+
         <CameraHeaderCard
           course={course}
+          sectionLabel={hasMultipleSections ? activeSection?.section_name : null}
           enrolledCount={enrolledCount}
           seatCapacity={numericCapacity}
           cardColor={cardColor}
           sessionActive={sessionActive}
           streamSource={streamSource}
           onSelectSource={handleSelectSource}
+          onPressCard={() => setSectionModalVisible(true)}
         />
 
         <ClassroomViewport
@@ -1330,31 +1625,19 @@ export default function LiveFeedScreen({
           </GlassContainer>
         </View>
 
-        {/* Classroom Seat Grid */}
+        {/* Classroom Diagram Layout */}
         <Text style={styles.sectionTitle}>
           Classroom Layout ({numericCapacity} Seats • {enrolledCount} Students)
         </Text>
-        <GlassContainer style={styles.seatGridWrap} intensity={60}>
-          <View style={styles.seatGridInner}>
-            <View style={styles.frontBoardTag}>
-              <Text style={styles.frontBoardText}>FRONT • CAMERA & LECTERN</Text>
-            </View>
-
-            <View style={styles.seatsGrid}>
-              {seats.map((item) => (
-                <SeatTile
-                  key={item.seat}
-                  item={item}
-                  isSelected={item.seat === selectedSeatCode}
-                  onPress={(picked) => {
-                    springLayout();
-                    setSelectedSeatCode(picked.seat);
-                  }}
-                />
-              ))}
-            </View>
-          </View>
-        </GlassContainer>
+        <ClassroomDiagramBoard
+          seats={seats}
+          selectedSeatCode={selectedSeatCode}
+          colsPerRow={colsPerRow}
+          onSelectSeat={(picked) => {
+            springLayout();
+            setSelectedSeatCode(picked.seat);
+          }}
+        />
 
         <SeatInspectorCard
           seat={selectedSeat}
@@ -1427,7 +1710,19 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.42)'
   },
 
-  // Entry Seat Plan Prompt Modal
+  // Entry Seat Plan, Rename & Section Manager Modals
+  renameInput: {
+    marginTop: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(7, 11, 36, 0.2)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    fontWeight: '700',
+    color: THEME.navy
+  },
   promptOverlay: {
     flex: 1,
     justifyContent: 'center',
@@ -1480,6 +1775,16 @@ const styles = StyleSheet.create({
     backgroundColor: THEME.navy
   },
   promptPrimaryText: { fontSize: 12, fontWeight: '800', color: '#FFFFFF' },
+  promptDangerBtn: {
+    flex: 0.5,
+    paddingVertical: 12,
+    borderRadius: 14,
+    alignItems: 'center',
+    backgroundColor: THEME.danger
+  },
+  promptBtnDisabled: { opacity: 0.4 },
+  modalDismissLink: { alignItems: 'center', marginTop: 14 },
+  modalDismissText: { fontSize: 12, fontWeight: '800', color: '#475569' },
 
   // Camera Hero Card
   camCardShadow: {
@@ -1732,7 +2037,7 @@ const styles = StyleSheet.create({
   summaryNum: { fontSize: 22, fontWeight: '900', color: THEME.navy },
   summaryLabel: { fontSize: 11, fontWeight: '700', color: THEME.muted, marginTop: 2 },
 
-  // Seat Grid
+  // Classroom Diagram Board
   sectionTitle: {
     fontSize: 18,
     fontWeight: '800',
@@ -1741,40 +2046,103 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
     letterSpacing: -0.3
   },
-  seatGridWrap: { marginBottom: 16 },
-  seatGridInner: { padding: 14 },
-  frontBoardTag: {
-    alignSelf: 'center',
-    backgroundColor: 'rgba(7, 11, 36, 0.08)',
-    paddingVertical: 5,
-    paddingHorizontal: 14,
-    borderRadius: 999,
-    marginBottom: 12
+  diagramOuter: { marginBottom: 18 },
+  diagramRoomBox: {
+    margin: 10,
+    borderWidth: 3,
+    borderColor: '#64748B',
+    backgroundColor: 'rgba(255, 255, 255, 0.72)',
+    padding: 12,
+    borderRadius: 8
   },
-  frontBoardText: { fontSize: 10, fontWeight: '800', color: '#475569', letterSpacing: 0.7 },
-  seatsGrid: {
+  diagramTopWall: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between'
-  },
-  seatTile: {
-    width: '23.5%',
-    borderRadius: 12,
-    padding: 8,
-    marginBottom: 8,
-    borderWidth: 1.2
-  },
-  seatTileSelected: { borderWidth: 2 },
-  seatTileTop: {
-    flexDirection: 'row',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    marginBottom: 16
+  },
+  teacherDeskBox: {
+    width: 68,
+    borderWidth: 1.5,
+    borderColor: '#334155',
+    backgroundColor: '#F1F5F9',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    alignItems: 'center'
+  },
+  teacherChairCap: {
+    width: 26,
+    height: 8,
+    borderWidth: 1.2,
+    borderColor: '#334155',
+    backgroundColor: '#E2E8F0',
     marginBottom: 4
   },
-  seatCode: { fontSize: 12, fontWeight: '900', color: THEME.navy },
-  seatStatusDot: { width: 6, height: 6, borderRadius: 3 },
-  seatStudentName: { fontSize: 10, fontWeight: '700', color: THEME.ink },
-  seatStatusLabel: { fontSize: 9, fontWeight: '800', marginTop: 2 },
+  teacherDeskLabel: { fontSize: 10, fontWeight: '700', color: THEME.ink, textAlign: 'center' },
+  whiteboardBar: {
+    flex: 1,
+    marginHorizontal: 10,
+    borderWidth: 1.5,
+    borderColor: '#1E3A8A',
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 5,
+    alignItems: 'center'
+  },
+  whiteboardLabel: { fontSize: 11, fontWeight: '700', color: THEME.ink },
+  topWallSpacer: { width: 24 },
+
+  diagramRowsScroll: { paddingVertical: 4 },
+  diagramRowsStack: { gap: 14 },
+  diagramDeskRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  deskUnitCol: { width: 58, alignItems: 'center' },
+  deskTopBox: {
+    width: 58,
+    height: 30,
+    borderWidth: 1.4,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3
+  },
+  deskTopSelected: { borderWidth: 2.2 },
+  deskNameText: { fontSize: 10, fontWeight: '700', color: THEME.ink },
+  deskChairBar: {
+    width: 34,
+    height: 9,
+    borderWidth: 1.3,
+    borderTopWidth: 0,
+    backgroundColor: '#E2E8F0'
+  },
+
+  diagramBottomWall: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    marginTop: 20
+  },
+  cubbiesRow: { flexDirection: 'row' },
+  cubbySlot: {
+    width: 44,
+    height: 24,
+    borderWidth: 1.3,
+    borderColor: '#475569',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  cubbyV: { fontSize: 10, fontWeight: '700', color: '#475569' },
+  doorBlock: { width: 42, height: 34, alignItems: 'flex-end', justifyContent: 'flex-end' },
+  doorArc: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    width: 34,
+    height: 34,
+    borderTopLeftRadius: 34,
+    borderWidth: 1.2,
+    borderColor: '#475569'
+  },
+  doorLeaf: { width: 4, height: 30, backgroundColor: '#475569' },
 
   // Seat Inspector
   inspectorWrap: { marginBottom: 20 },
