@@ -27,6 +27,8 @@ import Svg, {
   Line,
   Circle
 } from 'react-native-svg';
+import LiquidCardStack from '../components/LiquidCardStack';
+import EditCourseModal from '../components/EditCourseModal';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -47,10 +49,7 @@ const THEME = {
   defaultCardColor: '#0066FF'
 };
 
-const DECK_CONFIG = {
-  cardStep: 126,
-  cardOverlap: -38
-};
+const DECK_OVERLAP = -38;
 
 const COLOR_PRESETS = [
   { name: 'Red', hex: '#ED0A3F' },
@@ -111,11 +110,6 @@ const hexToRgb = (hex) => {
   return [0, 2, 4].map((i) => parseInt(clean.slice(i, i + 2), 16) || 0);
 };
 
-const hexToRgba = (hex, alpha) => {
-  const [r, g, b] = hexToRgb(hex);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-};
-
 const rgbToHex = (rgb) =>
   '#' +
   rgb
@@ -138,29 +132,6 @@ const getShades = (base) => [
   mixColor(base, '#000000', 0.4),
   mixColor(base, '#000000', 0.55)
 ];
-
-const getLuminance = (hex) => {
-  const [r, g, b] = hexToRgb(hex).map((v) => {
-    const c = v / 255;
-    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-  });
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-};
-
-const getCardTheme = (bg) => {
-  const L = getLuminance(bg);
-  const useWhite = 1.05 / (L + 0.05) > (L + 0.05) / 0.056;
-  const rgb = useWhite ? '255, 255, 255' : '7, 11, 36';
-
-  return {
-    ink: useWhite ? '#FFFFFF' : THEME.ink,
-    inkSoft: `rgba(${rgb}, 0.78)`,
-    line: `rgba(${rgb}, 0.22)`,
-    solidBg: useWhite ? 'rgba(255, 255, 255, 0.92)' : 'rgba(7, 11, 36, 0.88)',
-    solidText: useWhite ? THEME.ink : '#FFFFFF',
-    softPillBg: useWhite ? 'rgba(255, 255, 255, 0.24)' : 'rgba(255, 255, 255, 0.55)'
-  };
-};
 
 // =============================================================================
 // 3. SUB-COMPONENTS
@@ -321,141 +292,6 @@ function HatchedBar({ height, active, revealAnim }) {
   );
 }
 
-function ClassDeckCard({
-  course,
-  index,
-  isExpanded,
-  scrollY,
-  onToggleExpand,
-  onOpenRoster,
-  onOpenLiveFeed,
-  onDelete
-}) {
-  const cardBg = course.card_color || THEME.defaultCardColor;
-  const theme = getCardTheme(cardBg);
-
-  const enterAnim = useRef(new Animated.Value(0)).current;
-  const pressScale = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    Animated.spring(enterAnim, {
-      toValue: 1,
-      delay: Math.min(index * 75, 360),
-      friction: 7,
-      tension: 55,
-      useNativeDriver: true
-    }).start();
-  }, []);
-
-  // Wallet-deck scroll pinning & compression math
-  const startPin = index * DECK_CONFIG.cardStep;
-  const translateY = scrollY.interpolate({
-    inputRange: [-200, 0, startPin, startPin + 600],
-    outputRange: [index * 8, 0, 0, 600 - index * (DECK_CONFIG.cardStep - 14)],
-    extrapolate: 'clamp'
-  });
-
-  const scrollScale = scrollY.interpolate({
-    inputRange: [startPin - 40, startPin + 220],
-    outputRange: [1, 0.965],
-    extrapolate: 'clamp'
-  });
-
-  const enterTranslateY = enterAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [34, 0]
-  });
-
-  const animatePress = (toValue) =>
-    Animated.spring(pressScale, {
-      toValue,
-      friction: toValue < 1 ? 7 : 6,
-      useNativeDriver: true
-    }).start();
-
-  return (
-    <Animated.View
-      style={[
-        styles.walletCardShadow,
-        {
-          marginTop: index === 0 ? 0 : DECK_CONFIG.cardOverlap,
-          zIndex: index + 1,
-          transform: [{ translateY }, { scale: scrollScale }]
-        }
-      ]}
-    >
-      <Animated.View
-        style={{
-          opacity: enterAnim,
-          transform: [{ translateY: enterTranslateY }, { scale: pressScale }]
-        }}
-      >
-        <View style={styles.walletCardClip}>
-          <BlurView intensity={55} tint="light" style={StyleSheet.absoluteFill} />
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: hexToRgba(cardBg, 0.68) }]} />
-          <GlassSheen id={`cardSheen-${course.course_id}`} />
-
-          <TouchableOpacity
-            activeOpacity={0.95}
-            style={styles.walletCardInner}
-            onPressIn={() => animatePress(0.975)}
-            onPressOut={() => animatePress(1)}
-            onPress={onToggleExpand}
-          >
-            {/* Card Face: schedule, room, subject, and student count */}
-            <View style={styles.cardMainRow}>
-              <View style={styles.cardTitleCol}>
-                <Text style={[styles.cardCategorySub, { color: theme.inkSoft }]}>
-                  {course.schedule} • {course.room}
-                </Text>
-                <Text style={[styles.cardTitleText, { color: theme.ink }]} numberOfLines={1}>
-                  {course.course_name}
-                </Text>
-              </View>
-
-              <Text style={[styles.cardRightMetric, { color: theme.ink }]}>
-                {course.enrolled_count} {course.enrolled_count === 1 ? 'student' : 'students'}
-              </Text>
-            </View>
-
-            {/* Expanded Action Bar */}
-            {isExpanded && (
-              <View style={[styles.expandedDrawer, { borderTopColor: theme.line }]}>
-                <View style={styles.actionRowButtons}>
-                  <TouchableOpacity
-                    style={[styles.actionDarkPill, { backgroundColor: theme.solidBg }]}
-                    onPress={() => onOpenRoster && onOpenRoster(course)}
-                  >
-                    <Text style={[styles.actionDarkPillText, { color: theme.solidText }]}>
-                      Open List
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.actionLightPill, { backgroundColor: theme.softPillBg }]}
-                    onPress={() => onOpenLiveFeed && onOpenLiveFeed(course)}
-                  >
-                    <Text style={[styles.actionLightPillText, { color: theme.ink }]}>
-                      Live Feed
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.actionDeletePill}
-                    onPress={() => onDelete(course)}
-                  >
-                    <Text style={styles.actionDeleteText}>Delete</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-          </TouchableOpacity>
-        </View>
-      </Animated.View>
-    </Animated.View>
-  );
-}
-
 function AnalyticsCard({ courseCount, totalStudents, totalAnomalies, onOpenHealth }) {
   const barAnims = useRef(WEEKLY_BARS.map(() => new Animated.Value(0))).current;
 
@@ -479,8 +315,8 @@ function AnalyticsCard({ courseCount, totalStudents, totalAnomalies, onOpenHealt
       style={[
         styles.walletCardShadow,
         {
-          marginTop: courseCount === 0 ? 0 : DECK_CONFIG.cardOverlap,
-          zIndex: courseCount + 2
+          marginTop: courseCount === 0 ? 0 : DECK_OVERLAP,
+          zIndex: 2
         }
       ]}
     >
@@ -659,7 +495,6 @@ function AddClassModal({ visible, onClose, onSubmit }) {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.modalOverlay}
       >
-        {/* Blurred Backdrop */}
         <Animated.View style={[StyleSheet.absoluteFill, { opacity: backdropOpacity }]}>
           <BlurView intensity={28} tint="dark" style={StyleSheet.absoluteFill} />
           <TouchableOpacity
@@ -669,7 +504,6 @@ function AddClassModal({ visible, onClose, onSubmit }) {
           />
         </Animated.View>
 
-        {/* Frosted Glass Sheet */}
         <Animated.View
           style={[
             styles.glassModalShadow,
@@ -832,16 +666,19 @@ export default function DashboardScreen({
   fullName,
   courses = [],
   onAddCourse,
+  onUpdateCourse,
+  onReorderCourses,
   onDeleteCourse,
   setCurrentScreen,
   onOpenRoster,
   onOpenLiveFeed
 }) {
   const [selectedCardId, setSelectedCardId] = useState(null);
+  const [editingCourse, setEditingCourse] = useState(null);
+  const [isDraggingCard, setIsDraggingCard] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
 
-  const scrollY = useRef(new Animated.Value(0)).current;
   const chevronRot = useRef(new Animated.Value(0)).current;
 
   const totalStudents = courses.reduce((sum, c) => sum + (c.enrolled_count || 0), 0);
@@ -870,6 +707,14 @@ export default function DashboardScreen({
   const handleCreateCourse = (newCourse) => {
     springLayout();
     onAddCourse && onAddCourse(newCourse);
+  };
+
+  const handleSaveCourseEdits = (updates) => {
+    if (editingCourse && onUpdateCourse) {
+      springLayout();
+      onUpdateCourse(editingCourse.course_id, updates);
+    }
+    setEditingCourse(null);
   };
 
   const handleDeleteCourse = (course) => {
@@ -931,23 +776,16 @@ export default function DashboardScreen({
       )}
 
       {/* Stacked Glass Wallet Deck */}
-      <Animated.ScrollView
+      <ScrollView
+        scrollEnabled={!isDraggingCard}
         showsVerticalScrollIndicator={false}
-        scrollEventThrottle={16}
         contentContainerStyle={styles.deckScrollContent}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: true }
-        )}
       >
-        {courses.map((course, index) => (
-          <ClassDeckCard
-            key={course.course_id}
-            course={course}
-            index={index}
-            isExpanded={selectedCardId === course.course_id}
-            scrollY={scrollY}
-            onToggleExpand={() => {
+        <View style={[styles.stackLayer, isDraggingCard && styles.stackLayerDragging]}>
+          <LiquidCardStack
+            courses={courses}
+            expandedCardId={selectedCardId}
+            onToggleExpand={(course) => {
               springLayout();
               setSelectedCardId((prev) =>
                 prev === course.course_id ? null : course.course_id
@@ -955,9 +793,14 @@ export default function DashboardScreen({
             }}
             onOpenRoster={onOpenRoster}
             onOpenLiveFeed={onOpenLiveFeed}
-            onDelete={handleDeleteCourse}
+            onEditCourse={(course) => setEditingCourse(course)}
+            onDeleteCourse={handleDeleteCourse}
+            onReorderCourses={(nextCourses) => {
+              onReorderCourses && onReorderCourses(nextCourses);
+            }}
+            onDragStateChange={setIsDraggingCard}
           />
-        ))}
+        </View>
 
         <AnalyticsCard
           courseCount={courses.length}
@@ -965,13 +808,21 @@ export default function DashboardScreen({
           totalAnomalies={totalAnomalies}
           onOpenHealth={() => setCurrentScreen('HEALTH')}
         />
-      </Animated.ScrollView>
+      </ScrollView>
 
       {/* Glassmorphic Add New Class Modal */}
       <AddClassModal
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
         onSubmit={handleCreateCourse}
+      />
+
+      {/* Glassmorphic Edit Class Modal */}
+      <EditCourseModal
+        visible={Boolean(editingCourse)}
+        course={editingCourse}
+        onCancel={() => setEditingCourse(null)}
+        onSave={handleSaveCourseEdits}
       />
     </SafeAreaView>
   );
@@ -1057,12 +908,21 @@ const styles = StyleSheet.create({
   logoutPill: { backgroundColor: 'rgba(254, 242, 242, 0.85)' },
   drawerPillText: { fontSize: 12, fontWeight: '700', color: THEME.navy },
 
-  // Stacked Wallet Cards
+  // Stacked Wallet Deck
   deckScrollContent: {
     paddingHorizontal: 10,
     paddingTop: 4,
     paddingBottom: 80
   },
+  stackLayer: {
+    zIndex: 1,
+    overflow: 'visible'
+  },
+  stackLayerDragging: {
+    zIndex: 50
+  },
+
+  // Analytics Card
   walletCardShadow: {
     borderRadius: 30,
     shadowColor: THEME.navy,
@@ -1082,6 +942,7 @@ const styles = StyleSheet.create({
     paddingTop: 26,
     paddingBottom: 56
   },
+  analyticsInner: { paddingBottom: 26 },
   cardTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1093,7 +954,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-end'
   },
-  cardTitleCol: { flex: 1, paddingRight: 12 },
   cardCategorySub: {
     fontSize: 13,
     fontWeight: '600',
@@ -1113,41 +973,6 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
     flexShrink: 0
   },
-  expandedDrawer: {
-    marginTop: 18,
-    paddingTop: 14,
-    borderTopWidth: 1
-  },
-  actionRowButtons: { flexDirection: 'row', alignItems: 'center' },
-  actionDarkPill: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 14,
-    marginRight: 8
-  },
-  actionDarkPillText: { fontSize: 13, fontWeight: '700' },
-  actionLightPill: {
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 14,
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.45)'
-  },
-  actionLightPillText: { fontSize: 13, fontWeight: '700' },
-  actionDeletePill: {
-    backgroundColor: 'rgba(255, 255, 255, 0.86)',
-    borderWidth: 1.5,
-    borderColor: '#B91C1C',
-    paddingVertical: 8.5,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    marginLeft: 'auto'
-  },
-  actionDeleteText: { color: '#B91C1C', fontSize: 13, fontWeight: '700' },
-
-  // Analytics Card
-  analyticsInner: { paddingBottom: 26 },
   glyphBadge: {
     minWidth: 34,
     height: 34,

@@ -201,6 +201,39 @@ export default function App() {
     }
   };
 
+  const handleUpdateCourse = (courseId, updates) => {
+    if (!courseId) return;
+
+    setCourses((prev) =>
+      prev.map((course) =>
+        course.course_id === courseId ? { ...course, ...updates } : course
+      )
+    );
+
+    if (updates.room) {
+      const key = normalizeRoomKey(updates.room);
+      setRoomLayouts((prev) =>
+        prev[key]
+          ? prev
+          : {
+              ...prev,
+              [key]: {
+                roomName: updates.room.trim(),
+                capacity: 40,
+                colsPerRow: DEFAULT_COLS_PER_ROW,
+                source: 'PRESET'
+              }
+            }
+      );
+    }
+  };
+
+  const handleReorderCourses = (nextCourses) => {
+    if (Array.isArray(nextCourses)) {
+      setCourses(nextCourses);
+    }
+  };
+
   const handleDeleteCourse = (courseId) => {
     setCourses((prev) => prev.filter((item) => item.course_id !== courseId));
     setSectionsByCourse((prev) => {
@@ -290,6 +323,8 @@ export default function App() {
           fullName={professorProfile.nickname || fullName}
           courses={courses}
           onAddCourse={handleAddCourse}
+          onUpdateCourse={handleUpdateCourse}
+          onReorderCourses={handleReorderCourses}
           onDeleteCourse={handleDeleteCourse}
           setCurrentScreen={setCurrentScreen}
           onOpenRoster={handleOpenRoster}
