@@ -8,8 +8,8 @@
 
 | Role | Name |
 | :--- | :--- |
-| **Frontend / Mobile UI Developer** | *[Reynalyn Ruth V. Morbo]* |
-| **Backend & Database Engineer** | *[Louievince Kyle I. Laguidao]* |
+| **Frontend / Mobile UI Developer** | *Reynalyn Ruth V. Morbo* |
+| **Backend & Database Engineer** | *Louievince Kyle I. Laguidao* |
 
 ---
 
