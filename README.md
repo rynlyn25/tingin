@@ -8,13 +8,8 @@
 
 | Role | Name |
 | :--- | :--- |
-| **Project Manager / Lead Developer** | *[Member Name 1]* |
-| **Computer Vision & AI Engineer** | *[Member Name 2]* |
-| **Frontend / Mobile UI Developer** | *[Member Name 3]* |
-| **Backend & Database Engineer** | *[Member Name 4]* |
-| **Documentation & QA Specialist** | *[Member Name 5]* |
-
-*(Replace the placeholder names above with your group members' full names and roles.)*
+| **Frontend / Mobile UI Developer** | *[Reynalyn Ruth V. Morbo]* |
+| **Backend & Database Engineer** | *[Louievince Kyle I. Laguidao]* |
 
 ---
 
